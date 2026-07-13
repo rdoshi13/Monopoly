@@ -1,8 +1,8 @@
-# 🎲 Monopoly 🎲 - A Multiplayer React.js and Peer.js Game
+# Monopoly — authoritative multiplayer rooms
 
 [3.9.23] Taking A Break so i disabled firebase [accounts and so on, system that are not completed]
 
-Welcome to my Monopoly, a thrilling online multiplayer game developed using React.js, Express.js, and TypeScript. This exciting rendition of the classic Monopoly game incorporates some intriguing rule changes. this Monopoly can only be played in multiplayer mode.
+This fork is a React 18 and TypeScript multiplayer Monopoly game. Browsers send typed actions; a shared authority engine owns all balances, positions, cards, property state, trades, auctions, and turn progression.
 
 ### Features
 
@@ -16,19 +16,22 @@ Immerse yourself in an interactive gaming experience through the game UI. By cli
 
 Participate in the property-buying process through the intuitive buy-in UI and system, making strategic investments to grow your wealth and secure your victory. The game mechanics are designed to be straightforward, ensuring a user-friendly experience for players of all levels.
 
-## How to run the project
+## Multiplayer backend
 
-theres `src/config.ts` file that is hidden (inside .gitignore file), that his structure is:
+The project now follows Kachuful's authority model: a Node/Socket.IO server for local development and a Cloudflare Worker/Durable Object for production. The browser is never the game authority.
 
-```ts
-export default {
-	CODE_PREFIX: <string> // required,
-	PEER_SERVER_HOST: <string?>, // optional
-	PEER_SERVER_PORT: <number?>, // optional, default 443
-	PEER_SECURE: <boolean?>, // optional, default false
-	PEER_DEBUG_LEVEL: <number?>, // optional, default 0
-};
+```bash
+pnpm install
+pnpm dev:server # local API + Socket.IO at http://localhost:4000
+pnpm dev        # Vite frontend
+pnpm dev:worker # Cloudflare Durable Object backend
 ```
+
+Copy `apps/web/.env.example` to `apps/web/.env.local`. Use `VITE_SOCKET_TRANSPORT=socketio` for the local Node backend and `websocket` for the Worker.
+
+The active code lives only under `apps/` and `packages/`. Root `src/` is the retired PeerJS implementation retained temporarily for migration reference; it is outside the pnpm workspace and must not receive new fixes.
+
+Run `pnpm test`, `pnpm typecheck`, and `pnpm build` before deployment.
 
 ## Credits
 

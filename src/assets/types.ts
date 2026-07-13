@@ -67,7 +67,7 @@ export interface PlayerProprety {
     count: 0 | 1 | 2 | 3 | 4 | "h";
     group: string;
     rent?: number;
-    morgage?: boolean;
+    mortgaged?: boolean;
 }
 
 export interface historyAction {
