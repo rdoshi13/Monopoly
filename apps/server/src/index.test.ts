@@ -73,6 +73,15 @@ describe("local room API", () => {
     expect(socket.connected).toBe(true);
   });
 
+  it("distinguishes a missing room from a genuine conflict", async () => {
+    const join = (code: string, name: string) => fetch(`${baseUrl}/rooms/${code}/join`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+    expect((await join("ZZZZZZ", "Nobody")).status).toBe(404);
+
+    const created = await (await fetch(`${baseUrl}/rooms`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Host" }) })).json() as { roomCode: string };
+    expect((await join(created.roomCode, "Host")).status).toBe(409);
+    expect((await join(created.roomCode, "  ")).status).toBe(400);
+  });
+
   it("rate-limits room creation instead of allowing unbounded allocation", async () => {
     const create = () => fetch(`${baseUrl}/rooms`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Flood" }) });
     const statuses: number[] = [];

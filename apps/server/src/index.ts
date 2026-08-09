@@ -91,17 +91,22 @@ function createRoom(name: string): GuestSession {
   return { roomCode, playerId, sessionToken };
 }
 
+/** Carries the status so a missing room is a 404 rather than a conflict. */
+class RequestError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+
 function joinRoom(roomCode: string, name: string): GuestSession {
   const room = rooms.get(roomCode.toUpperCase());
-  if (!room) throw new Error("Room not found");
-  if (room.engine.snapshot().gameStarted) throw new Error("Game already started");
+  if (!room) throw new RequestError("Room not found", 404);
+  if (room.engine.snapshot().gameStarted) throw new RequestError("Game already started", 409);
   const clean = cleanName(name);
-  if (!clean) throw new Error("Name is required");
-  if (room.players.length >= 6) throw new Error("Room is full");
-  if (room.players.some((player) => player.name.toLowerCase() === clean.toLowerCase())) throw new Error("Name is already in use");
+  if (!clean) throw new RequestError("Name is required", 400);
+  if (room.players.length >= 6) throw new RequestError("Room is full", 409);
+  if (room.players.some((player) => player.name.toLowerCase() === clean.toLowerCase())) throw new RequestError("Name is already in use", 409);
   const playerId = randomUUID();
   const sessionToken = randomUUID();
-  if (!room.engine.connect(playerId, clean)) throw new Error("Unable to join game lobby");
+  if (!room.engine.connect(playerId, clean)) throw new RequestError("Unable to join game lobby", 409);
   room.players.push({ playerId, name: clean, sessionToken, connected: false });
   return { roomCode: room.roomCode, playerId, sessionToken };
 }
@@ -131,7 +136,7 @@ app.post("/rooms/:code/join", (req, res) => {
   try {
     res.json(joinRoom(req.params.code, String(req.body?.name ?? "")));
   } catch (error) {
-    res.status(409).json({ error: (error as Error).message });
+    res.status(error instanceof RequestError ? error.status : 409).json({ error: (error as Error).message });
   }
 });
 

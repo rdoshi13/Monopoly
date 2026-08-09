@@ -7,7 +7,7 @@ import { GameCardModal, type DrawnCardEvent } from "./GameCard";
 import { CodedBoard } from "./CodedBoard";
 
 type SendAction = (action: GameAction) => void;
-export type GameEvent = { id: number; text: string };
+export type GameEvent = { id: number; text: string; playerId?: string };
 export type DiceResult = { id: number; playerId: string; dice: [number, number]; fromPosition: number; position: number; moved: boolean; fromJail: boolean };
 export type CardResult = DrawnCardEvent & { id: number; fromPosition: number; position: number; moved: boolean; fromJail: boolean; toJail: boolean };
 export type GamePresentationEvent = { kind: "dice"; result: DiceResult } | { kind: "card"; result: CardResult };
@@ -17,7 +17,7 @@ type RollPresentation = { result: DiceResult; phase: RollPhase; faces: [number, 
 type CardPresentation = { result: CardResult; phase: "card" | "moving"; position: number; isInJail: boolean };
 
 const spaceByPosition = new Map(boardSpaces.map((space) => [space.posistion, space]));
-const propertyName = (position: number) => spaceByPosition.get(position)?.name ?? `Space ${position}`;
+export const propertyName = (position: number) => spaceByPosition.get(position)?.name ?? `Space ${position}`;
 const playerColors = ["#d43f3f", "#315dc4", "#2c9763", "#d18a22", "#7442a5", "#292d32"];
 const playerColor = (icon: number) => playerColors[icon] ?? playerColors[0];
 
@@ -234,7 +234,7 @@ export function GameView({ room, game, playerId, connection, error, events, pres
         <section className="panel"><h3>Players</h3><div className="players">{playersWithConnection.map((player) => <button type="button" className={`player-card player-card-button ${player.id === game.currentPlayerId ? "active" : ""}${player.id === highlightedPlayerId ? " selected" : ""}`} style={{ "--player-color": playerColor(player.icon) } as React.CSSProperties} aria-label={`Highlight ${player.username} on the board for 3 seconds`} aria-pressed={player.id === highlightedPlayerId} onClick={() => highlightPlayer(player.id)} key={player.id}><span className={`token token-${player.icon}`}><img src={playerTokens[player.icon] ?? playerTokens[0]} alt="" /></span><span><strong>{player.username}{player.id === playerId ? " (you)" : ""}</strong><small>£{player.balance} · {propertyName(player.position)}{player.isInJail ? " · Jail" : ""}</small></span><i className={player.connected ? "online" : "offline"} /></button>)}</div></section>
         <section className="panel"><h3>Your properties</h3>{me?.properties.length ? <ul className="property-list">{me.properties.map((property) => <li key={property.posistion}><span><strong>{propertyName(property.posistion)}</strong><small>{property.count === "h" ? "Hotel" : `${property.count} houses`}{property.mortgaged ? " · Mortgaged" : ""}</small></span>{!presentationBusy && myTurn && game.phase === "awaiting-roll" && <span className="mini-actions"><button onClick={() => send({ type: "build", position: property.posistion })}>Build</button>{property.count !== 0 && <button onClick={() => send({ type: "sell-building", position: property.posistion })}>Sell</button>}<button onClick={() => send({ type: property.mortgaged ? "unmortgage" : "mortgage", position: property.posistion })}>{property.mortgaged ? "Redeem" : "Mortgage"}</button></span>}</li>)}</ul> : <p className="muted">No properties yet.</p>}<small className="muted">Bank: {game.bankSupply.houses} houses · {game.bankSupply.hotels} hotels</small></section>
         <TradePanel game={game} playerId={playerId} send={send} interactionLocked={presentationBusy} />
-        <section className="panel events"><h3>Game events</h3>{events.length ? <ol>{events.map((event) => <li key={event.id}>{event.text}</li>)}</ol> : <p className="muted">Rolls, cards and payments will appear here.</p>}</section>
+        <section className="panel events"><h3>Game events</h3>{events.length ? <ol>{events.map((event) => <li key={event.id}>{event.playerId ? `${game.players.find((player) => player.id === event.playerId)?.username ?? "A player"} ${event.text}` : event.text}</li>)}</ol> : <p className="muted">Rolls, cards and payments will appear here.</p>}</section>
       </aside>
     </div>
     {rollPresentation?.phase === "double" && <div className="roll-announcement" role="status"><strong>{rollingPlayerName} rolled a double!</strong><span>Another roll follows this move.</span></div>}

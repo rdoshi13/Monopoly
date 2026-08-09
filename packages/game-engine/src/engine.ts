@@ -118,7 +118,23 @@ const modes: Record<ModeId, MonopolyMode> = {
 
 const properties = board.properties as Array<Record<string, unknown>>;
 const propertyByPosition = new Map(properties.map((property) => [Number(property.posistion), property]));
-const propertyById = new Map(properties.map((property) => [String(property.id), property]));
+
+/** Ids are not unique: `chance` and `communitychest` each appear three times. */
+const positionsById = properties.reduce((map, property) => {
+    const id = String(property.id);
+    return map.set(id, [...(map.get(id) ?? []), Number(property.posistion)].sort((first, second) => first - second));
+}, new Map<string, number[]>());
+
+/**
+ * Resolves a card's target space. For the repeated ids this picks the next
+ * matching space forward, which is what "advance to" means to a player; a map
+ * keyed by id would silently keep whichever entry happened to be last.
+ */
+function destinationById(from: number, tileId: string | undefined): number | null {
+    const positions = positionsById.get(tileId ?? "");
+    if (!positions?.length) return null;
+    return positions.find((candidate) => candidate > from) ?? positions[0];
+}
 
 export interface BoardSpace {
     id: string;
@@ -789,9 +805,8 @@ export class GameEngine {
 
     private moveByCard(player: EnginePlayer, card: Card) {
         if (typeof card.count === "number") { player.position = (player.position + card.count + 40) % 40; return; }
-        const destination = propertyById.get(card.tileid ?? "");
-        if (!destination) return;
-        const next = Number(destination.posistion);
+        const next = destinationById(player.position, card.tileid);
+        if (next === null) return;
         if (next < player.position) player.balance += 200;
         player.position = next;
     }
@@ -799,8 +814,8 @@ export class GameEngine {
     private cardDestination(player: EnginePlayer, card: Card): { position: number; toJail: boolean } | null {
         if (card.action === "move") {
             if (typeof card.count === "number") return { position: (player.position + card.count + 40) % 40, toJail: false };
-            const destination = propertyById.get(card.tileid ?? "");
-            return destination ? { position: Number(destination.posistion), toJail: false } : null;
+            const next = destinationById(player.position, card.tileid);
+            return next === null ? null : { position: next, toJail: false };
         }
         if (card.action === "movenearest") return { position: this.nearestPosition(player.position, card.groupid), toJail: false };
         if (card.action === "jail" && card.subaction === "goto") return { position: 10, toJail: true };
@@ -906,13 +921,13 @@ export class GameEngine {
             creditor.balance += Math.max(0, player.balance);
             let interest = 0;
             for (const property of player.properties) {
-                property.count = 0;
+                this.returnBuildings(property);
                 if (property.mortgaged) interest += Math.ceil(this.mortgageValue(property.posistion) / 10);
                 creditor.properties.push(property);
             }
             creditor.balance -= interest;
         } else {
-            for (const property of player.properties) property.count = 0;
+            for (const property of player.properties) this.returnBuildings(property);
         }
         player.balance = 0;
         player.properties = [];
@@ -934,6 +949,13 @@ export class GameEngine {
             this.currentIndex -= 1;
         }
         this.history(`${player.username} went bankrupt because of ${reason}`);
+    }
+
+    /** Buildings must go back to the bank's finite supply before a property moves or leaves play. */
+    private returnBuildings(property: PlayerProperty) {
+        if (property.count === "h") this.bankSupply.hotels += 1;
+        else this.bankSupply.houses += property.count;
+        property.count = 0;
     }
 
     private sendToJail(player: EnginePlayer) { player.position = 10; player.isInJail = true; player.jailTurnsRemaining = 3; this.consecutiveDoubles = 0; this.extraRollPending = false; }

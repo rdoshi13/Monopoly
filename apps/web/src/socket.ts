@@ -9,15 +9,30 @@ export interface GameSocket {
   disconnect(): void;
 }
 
+const RECONNECT_BASE_MS = 500;
+const RECONNECT_CAP_MS = 15_000;
+
 class NativeSocket implements GameSocket {
   private socket: WebSocket | null = null;
-  private handlers = new Map<string, Handler>();
+  private handlers = new Map<string, Handler[]>();
   private queuedMessages: string[] = [];
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempts = 0;
   private stopped = false;
 
   constructor(private readonly url: string) {
     this.connect();
+  }
+
+  private dispatch(event: string, payload?: unknown) {
+    for (const handler of this.handlers.get(event) ?? []) handler(payload);
+  }
+
+  /** Exponential backoff with jitter, so a downed server is not hammered every second. */
+  private reconnectDelay() {
+    const capped = Math.min(RECONNECT_CAP_MS, RECONNECT_BASE_MS * (2 ** this.reconnectAttempts));
+    this.reconnectAttempts += 1;
+    return capped * (0.7 + (Math.random() * 0.6));
   }
 
   private connect() {
@@ -27,23 +42,24 @@ class NativeSocket implements GameSocket {
 
     socket.addEventListener("open", () => {
       if (this.socket !== socket) return;
+      this.reconnectAttempts = 0;
       const queued = this.queuedMessages.splice(0);
       for (const message of queued) socket.send(message);
-      this.handlers.get("socket:open")?.(undefined);
+      this.dispatch("socket:open");
     });
     socket.addEventListener("message", (event) => {
       try {
         const message = JSON.parse(String(event.data)) as WireMessage;
-        if (message && typeof message.event === "string") this.handlers.get(message.event)?.(message.payload);
+        if (message && typeof message.event === "string") this.dispatch(message.event, message.payload);
       } catch {
-        this.handlers.get("socket:error")?.("Invalid message received from the server");
+        this.dispatch("socket:error", "Invalid message received from the server");
       }
     });
-    socket.addEventListener("error", () => this.handlers.get("socket:error")?.("Unable to connect to the game server"));
+    socket.addEventListener("error", () => this.dispatch("socket:error", "Unable to connect to the game server"));
     socket.addEventListener("close", () => {
       if (this.socket !== socket) return;
-      this.handlers.get("socket:close")?.(undefined);
-      if (!this.stopped) this.reconnectTimer = setTimeout(() => this.connect(), 1000);
+      this.dispatch("socket:close");
+      if (!this.stopped) this.reconnectTimer = setTimeout(() => this.connect(), this.reconnectDelay());
     });
   }
 
@@ -54,7 +70,7 @@ class NativeSocket implements GameSocket {
   }
 
   on(event: string, handler: Handler) {
-    this.handlers.set(event, handler);
+    this.handlers.set(event, [...(this.handlers.get(event) ?? []), handler]);
   }
 
   disconnect() {

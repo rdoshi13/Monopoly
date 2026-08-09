@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import type { GuestSession, RoomState } from "@monopoly/shared-types";
 import type { Card, GameAction, GameSnapshot } from "@monopoly/game-engine";
 import { createGameSocket, type GameSocket } from "./socket";
-import { GameView, LobbyView, type CardResult, type DiceResult, type GameEvent, type GamePresentationEvent } from "./GameView";
+import { GameView, LobbyView, propertyName, type CardResult, type DiceResult, type GameEvent, type GamePresentationEvent } from "./GameView";
 import { playSound } from "./assets";
 import "./styles.css";
 
@@ -75,20 +75,21 @@ function App() {
         return snapshot;
       });
     });
-    const record = (text: string) => setEvents((current) => [{ id: eventSequence.current++, text }, ...current].slice(0, 20));
+    // The name is resolved at render time from the live snapshot, not captured here.
+    const record = (text: string, playerId?: string) => setEvents((current) => [{ id: eventSequence.current++, text, playerId }, ...current].slice(0, 20));
     client.on("game:dice", (payload) => {
       const event = payload as { playerId?: unknown; dice?: unknown; fromPosition?: unknown; position?: unknown; moved?: unknown; fromJail?: unknown };
       if (typeof event.playerId !== "string" || !Array.isArray(event.dice) || event.dice.length !== 2 || !event.dice.every((die) => Number.isInteger(die) && die >= 1 && die <= 6) || !Number.isInteger(event.fromPosition) || !Number.isInteger(event.position) || typeof event.moved !== "boolean" || typeof event.fromJail !== "boolean") return;
       const result: DiceResult = { id: presentationSequence.current++, playerId: event.playerId, dice: [Number(event.dice[0]), Number(event.dice[1])], fromPosition: Number(event.fromPosition), position: Number(event.position), moved: event.moved, fromJail: event.fromJail };
       setPresentationEvents((current) => [...current, { kind: "dice", result }]);
-      record(result.moved ? `A player rolled ${result.dice[0]} + ${result.dice[1]} and moved to space ${result.position}.` : `A player rolled ${result.dice[0]} + ${result.dice[1]}.`);
+      record(result.moved ? `rolled ${result.dice[0]} + ${result.dice[1]} and moved to ${propertyName(result.position)}` : `rolled ${result.dice[0]} + ${result.dice[1]}`, result.playerId);
     });
     client.on("game:card", (payload) => {
       const event = payload as { playerId?: unknown; deck?: unknown; card?: Partial<Card>; fromPosition?: unknown; position?: unknown; moved?: unknown; fromJail?: unknown; toJail?: unknown };
       if (typeof event.playerId === "string" && (event.deck === "chance" || event.deck === "communitychest") && typeof event.card?.title === "string" && typeof event.card.action === "string" && Number.isInteger(event.fromPosition) && Number(event.fromPosition) >= 0 && Number(event.fromPosition) < 40 && Number.isInteger(event.position) && Number(event.position) >= 0 && Number(event.position) < 40 && typeof event.moved === "boolean" && typeof event.fromJail === "boolean" && typeof event.toJail === "boolean") {
         const result: CardResult = { id: presentationSequence.current++, playerId: event.playerId, deck: event.deck, card: event.card as Card, fromPosition: Number(event.fromPosition), position: Number(event.position), moved: event.moved, fromJail: event.fromJail, toJail: event.toJail };
         setPresentationEvents((current) => [...current, { kind: "card", result }]);
-        record(event.card.title);
+        record(`drew ${event.card.title}`, result.playerId);
       }
     });
     client.on("game:history", (payload) => {
@@ -120,7 +121,7 @@ function App() {
     };
   }, [session]);
 
-  const useSession = (next: GuestSession) => {
+  const startSession = (next: GuestSession) => {
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
     setError("");
     setRoom(null);
@@ -162,7 +163,7 @@ function App() {
       <h1>Monopoly</h1>
       <p>Create a private room or join with a six-character code.</p>
       {error && <p role="alert">{error}</p>}
-      <div className="entry-grid"><label>Your name<input placeholder="Your name" value={name} onChange={(event) => setName(event.target.value)} /></label><button className="primary" onClick={() => request("/rooms", { name }).then(useSession).catch((reason) => setError(reason.message))}>Create room</button><div className="join-row"><input aria-label="Room code" placeholder="Room code" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} /><button onClick={() => request(`/rooms/${code}/join`, { name }).then(useSession).catch((reason) => setError(reason.message))}>Join room</button></div></div>
+      <div className="entry-grid"><label>Your name<input placeholder="Your name" value={name} onChange={(event) => setName(event.target.value)} /></label><button className="primary" onClick={() => request("/rooms", { name }).then(startSession).catch((reason) => setError(reason.message))}>Create room</button><div className="join-row"><input aria-label="Room code" placeholder="Room code" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} /><button onClick={() => request(`/rooms/${code}/join`, { name }).then(startSession).catch((reason) => setError(reason.message))}>Join room</button></div></div>
     </section></main>;
   }
 

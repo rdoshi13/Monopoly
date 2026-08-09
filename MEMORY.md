@@ -21,6 +21,7 @@ Monopoly is a pnpm-workspace React 18 and TypeScript multiplayer game. A shared 
 - Node and Worker share the same snapshot/action protocol and 30-second disconnect grace behavior.
 - Worker room codes are minted in the stateless entrypoint and used directly as the Durable Object name, so no registry or KV mapping is needed. A colliding code is detected by the object already holding a room, which 409s so the entrypoint retries.
 - Monopol wins with all four Railroads plus one complete street group; Run-Down applies a persisted 30-second turn deadline.
+- Building, selling, mortgaging and proposing trades are restricted to the owner's own `awaiting-roll` phase. Official rules allow them at any time, including during another player's turn; the engine covers the solvency case that matters by auto-liquidating in `raiseCash` when a debt cannot be paid. This is a deliberate divergence, not an oversight.
 - Root PeerJS code remains temporarily only for migration comparison and should be deleted in a dedicated later commit.
 - The active edition is the classic UK/London board: London property and station names, UK Chance/Community Chest decks, and pound-denominated UI/history. Numeric prices, rents, and balances remain plain integers internally.
 
@@ -49,6 +50,17 @@ pnpm build
 ## Change Log
 
 <!-- Newest first. Record meaningful features, fixes, migrations, refactors, or dependency changes. -->
+
+### 2026-08-09 — Claude
+
+- Fixed: Card destinations resolve through `destinationById`, which picks the next matching space forward. `propertyById` was keyed by an id that is not unique — `chance` and `communitychest` each appear three times — so it silently kept whichever entry was last. No shipped card targets a repeated id, so this is hardening rather than a fixed live bug; behaviour is identical for every existing card.
+- Fixed: `bankrupt` returns standing buildings to the bank's finite supply via `returnBuildings`. It previously zeroed `count` without crediting `bankSupply`, leaking houses and hotels out of play.
+- Fixed: The Node server answers 404 for a missing room instead of 409 for every join failure. `RequestError` carries the status, so a full room and an in-progress game stay 409 and a blank name is 400.
+- Fixed: `NativeSocket.on` keeps every handler instead of silently replacing the previous one, and reconnect uses exponential backoff with jitter capped at 15s rather than retrying every second forever.
+- Fixed: The event feed names the player. Dice and card entries carry a `playerId` resolved against the live snapshot at render time, and report the space name rather than its index: "Alice rolled 4 + 6 and moved to Jail / Just Visiting".
+- Changed: Renamed `useSession` to `startSession`. The `use` prefix made a plain callback look like a hook and would have tripped `react-hooks/rules-of-hooks` once lint is enforced.
+- Files: `packages/game-engine/src/engine.ts`, `packages/game-engine/test/engine.test.ts`, `apps/server/src/index.ts`, `apps/server/src/index.test.ts`, `apps/web/src/socket.ts`, `apps/web/src/main.tsx`, `apps/web/src/GameView.tsx`, and `packages/shared-types/src/index.ts`.
+- Validation: 34 engine + 6 Node + 2 Worker tests, type-check, web build, Worker dry-run. The bank-supply test was confirmed to fail against the previous implementation. A live two-player game showed both players named in the event feed with no console errors.
 
 ### 2026-08-09 — Claude
 

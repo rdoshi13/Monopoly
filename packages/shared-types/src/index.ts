@@ -11,6 +11,10 @@ function isLocalOrigin(origin: string): boolean {
  * Shared by both transports so the Node server and the Worker cannot drift.
  * A localhost configuration accepts any localhost port, which keeps local
  * development workable without loosening a production origin.
+ *
+ * This scopes which browser pages may call the API. It is not an access
+ * control: a non-browser client simply omits the Origin header, and callers
+ * that send none are allowed through. Session tokens are the authorization.
  */
 export function isAllowedOrigin(origin: string, configuredOrigin: string): boolean {
   if (origin === configuredOrigin) return true;

@@ -523,6 +523,43 @@ describe("GameEngine authority", () => {
         expect(engine.snapshot().turnTimeoutSeconds).toBeNull();
     });
 
+    it("resolves a repeated tile id to the next matching space forward", () => {
+        // chance and communitychest each appear three times; a map keyed by id
+        // would collapse them to whichever entry happened to be last.
+        const chance = board.properties.filter((space) => space.id === "chance").map((space) => space.posistion);
+        expect(chance).toHaveLength(3);
+
+        const engine = game([0, 0]);
+        ready(engine);
+        const internal = engine as unknown as { players: Map<string, { position: number; balance: number }>; cardDecks: Record<string, { remaining: number[]; discard: number[] }> };
+        // Force the deck to the "Advance to Go" card, whose id is unique.
+        internal.cardDecks.chance = { remaining: [0], discard: [] };
+        internal.players.get("a")!.position = 5;
+        expect(engine.handle("a", { type: "roll" })).toBe(true);
+        expect(player(engine, "a").position).toBe(0);
+        expect(player(engine, "a").balance).toBe(1700);
+    });
+
+    it("returns a bankrupt player's buildings to the bank", () => {
+        const engine = game();
+        ready(engine);
+        const internal = engine as unknown as {
+            players: Map<string, { balance: number; properties: Array<{ posistion: number; count: 0 | 4 | "h"; group: string; mortgaged: boolean }> }>;
+            bankSupply: { houses: number; hotels: number };
+        };
+        internal.players.get("a")!.properties = [
+            { posistion: 1, count: "h", group: "Brown", mortgaged: false },
+            { posistion: 3, count: 4, group: "Brown", mortgaged: false },
+        ];
+        internal.bankSupply.houses = 0;
+        internal.bankSupply.hotels = 0;
+        const bankrupt = engine as unknown as { bankrupt(player: unknown, creditor: unknown, reason: string): void };
+        bankrupt.bankrupt(internal.players.get("a"), undefined, "test");
+
+        // The hotel and the four standing houses both go back into the finite supply.
+        expect(engine.snapshot().bankSupply).toEqual({ houses: 4, hotels: 1 });
+    });
+
     it("auctions a declined property with validated atomic bidding", () => {
         const engine = game([0, 1 / 6]);
         ready(engine);
