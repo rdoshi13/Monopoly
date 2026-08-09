@@ -3,7 +3,7 @@
   "name": "monopoly-server",
   "main": "src/index.ts",
   "compatibility_date": "2026-07-11",
-  "durable_objects": { "bindings": [{ "name": "GAME_HUB", "class_name": "GameHub" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameHub"] }],
+  "durable_objects": { "bindings": [{ "name": "GAME_HUB", "class_name": "GameHub" }, { "name": "ROOM_LIMITER", "class_name": "RoomLimiter" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameHub"] }, { "tag": "v2", "new_sqlite_classes": ["RoomLimiter"] }],
   "vars": { "ALLOWED_ORIGIN": "http://localhost:5173" }
 }

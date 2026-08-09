@@ -41,7 +41,7 @@ function App() {
     if (!session) return;
 
     setConnection("connecting");
-    const client = createGameSocket();
+    const client = createGameSocket(session.roomCode);
     socket.current = client;
     client.on("socket:open", () => {
       setConnection("connected");

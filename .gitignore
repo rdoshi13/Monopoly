@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# wrangler dev writes local Durable Object state here
+.wrangler
+
 # configuration files
 *.env
 *.env.*

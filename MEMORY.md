@@ -11,7 +11,7 @@ Monopoly is a pnpm-workspace React 18 and TypeScript multiplayer game. A shared 
 - `packages/game-engine` owns serializable rules, board data, turns, cards, trades, auctions, development, mortgages, and insolvency.
 - `packages/shared-types` owns guest sessions, room state, and wire types.
 - `apps/server` is the local Express + Socket.IO room authority.
-- `apps/cloudflare-server` is the production Worker and global Durable Object authority.
+- `apps/cloudflare-server` is the production Worker. One Durable Object owns one room, addressed by `idFromName(roomCode)`; a single `RoomLimiter` instance throttles room creation.
 - `apps/web` is the Vite snapshot-driven board client with reconnecting Socket.IO/native WebSocket transports.
 - Root `src/` is retired PeerJS reference outside the workspace; do not modify it for active behavior.
 
@@ -19,6 +19,7 @@ Monopoly is a pnpm-workspace React 18 and TypeScript multiplayer game. A shared 
 
 - Browsers are never gameplay authorities; session-bound Node/Worker handlers supply actor identity to `GameEngine`.
 - Node and Worker share the same snapshot/action protocol and 30-second disconnect grace behavior.
+- Worker room codes are minted in the stateless entrypoint and used directly as the Durable Object name, so no registry or KV mapping is needed. A colliding code is detected by the object already holding a room, which 409s so the entrypoint retries.
 - Monopol wins with all four Railroads plus one complete street group; Run-Down applies a persisted 30-second turn deadline.
 - Root PeerJS code remains temporarily only for migration comparison and should be deleted in a dedicated later commit.
 - The active edition is the classic UK/London board: London property and station names, UK Chance/Community Chest decks, and pound-denominated UI/history. Numeric prices, rents, and balances remain plain integers internally.
@@ -30,6 +31,7 @@ Monopoly is a pnpm-workspace React 18 and TypeScript multiplayer game. A shared 
 - `apps/web/.env.local` should use `socketio` with `http://localhost:4000` for local development.
 - Production `ALLOWED_ORIGIN` must be changed from localhost to the actual Pages/custom origin.
 - The old root `package-lock.json`, `yarn.lock`, `docs/`, and PeerJS `src/` should be removed only in a dedicated cleanup commit.
+- The Worker's `/ws` upgrade requires `?room=CODE`. Without it the request cannot be routed to the right room's Durable Object and is rejected with 400. The Socket.IO transport ignores the parameter.
 - The workspace is pinned to pnpm 9.12.3. If a Codex fallback runtime exposes pnpm 11, use `/opt/homebrew/bin/pnpm`; pnpm 11 may request an unintended `node_modules` purge.
 - When changing coded-board grid track ratios, update the rotated left/right `.board-space-inner` dimensions as reciprocal geometry; leaving the former 2:1 dimensions on the 1.6:1 side tracks makes labels spill across the board.
 
@@ -47,6 +49,19 @@ pnpm build
 ## Change Log
 
 <!-- Newest first. Record meaningful features, fixes, migrations, refactors, or dependency changes. -->
+
+### 2026-08-09 — Claude
+
+- Changed: The Worker now shards one Durable Object per room via `idFromName(roomCode)`. Every room previously ran through a single object named `global` that persisted all rooms as one storage value, which serialized all concurrent games onto one request queue and would have hard-failed at Cloudflare's 128KB per-value limit as rooms accumulated.
+- Changed: Room codes are minted in the stateless entrypoint and used as the object name, so no registry or KV mapping is needed. An object that already holds a room returns 409 and the entrypoint retries with a new code, up to five attempts.
+- Changed: `/ws` now requires `?room=CODE` so the upgrade lands on the right object; `createGameSocket` takes the room code. Health, preflight, and origin rejection are answered in the entrypoint so they never spin up a room object.
+- Fixed: Alarms are scheduled only when something is actually pending. `persist` previously always rearmed a 30-second alarm and `alarm` always called `persist`, so every room woke up every 30 seconds forever — including empty ones. `nextWakeup` returns the soonest of the turn deadline, disconnect grace expiry, and empty-room prune, or null to clear the alarm entirely.
+- Changed: Room-creation throttling moved to a dedicated `RoomLimiter` Durable Object, because sharding removed the shared instance that held it. `MAX_ROOMS` was dropped from the Worker: it existed because all rooms shared one object's memory and storage, which is no longer true. Node keeps its cap.
+- Added: `scheduling.ts` holds `nextWakeup` as a pure function with unit coverage, following the existing `security.ts` split for testable boundary logic.
+- Files: `apps/cloudflare-server/src/index.ts`, `apps/cloudflare-server/src/scheduling.ts`, `apps/cloudflare-server/src/scheduling.test.ts`, `apps/cloudflare-server/wrangler.jsonc`, `apps/web/src/socket.ts`, and `apps/web/src/main.tsx`.
+- Validation: A local `wrangler dev` ran a full two-player game — create, join, WebSocket join, ready, start, roll, dice broadcast, position update — plus per-room isolation, a 404 for an unknown room, a 400 for `/ws` without a code, and the 5-per-window creation limit holding across object boundaries. Alarm behaviour was measured with temporary logging since removed: 75 seconds idle in a lobby with everyone connected fired zero alarms, and a disconnect fired exactly one at the 30-second grace expiry.
+- Gotcha: The Durable Object storage key changed from `rooms` (an array of every room) to `room` (this object's single room). No Cloudflare resources have ever been deployed, so there is no migration path and none was written. Adding one is required if that ever stops being true.
+- Gotcha: `wrangler dev` must be run from `apps/cloudflare-server`; from the repo root it picks up the wrong config and reports a missing assets directory.
 
 ### 2026-08-09 — Claude
 

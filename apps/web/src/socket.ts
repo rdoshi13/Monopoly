@@ -96,9 +96,14 @@ class SocketIoSocket implements GameSocket {
   }
 }
 
-export const createGameSocket = (): GameSocket => {
+/**
+ * The Worker shards one Durable Object per room, so the room code must be on the
+ * upgrade URL for the socket to reach the right room. The Socket.IO transport
+ * routes by event instead and ignores it.
+ */
+export const createGameSocket = (roomCode: string): GameSocket => {
   const base = import.meta.env.VITE_SOCKET_BASE ?? "http://localhost:4000";
   return import.meta.env.VITE_SOCKET_TRANSPORT === "socketio"
     ? new SocketIoSocket(io(base))
-    : new NativeSocket(`${base.replace(/^http/, "ws").replace(/\/$/, "")}/ws`);
+    : new NativeSocket(`${base.replace(/^http/, "ws").replace(/\/$/, "")}/ws?room=${encodeURIComponent(roomCode)}`);
 };
