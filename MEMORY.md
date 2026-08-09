@@ -13,7 +13,7 @@ Monopoly is a pnpm-workspace React 18 and TypeScript multiplayer game. A shared 
 - `apps/server` is the local Express + Socket.IO room authority.
 - `apps/cloudflare-server` is the production Worker. One Durable Object owns one room, addressed by `idFromName(roomCode)`; a single `RoomLimiter` instance throttles room creation.
 - `apps/web` is the Vite snapshot-driven board client with reconnecting Socket.IO/native WebSocket transports.
-- Root `src/` is retired PeerJS reference outside the workspace; do not modify it for active behavior.
+- The repository root now holds only workspace configuration; all code is under `apps/` and `packages/`.
 
 ## Decisions
 
@@ -22,7 +22,7 @@ Monopoly is a pnpm-workspace React 18 and TypeScript multiplayer game. A shared 
 - Worker room codes are minted in the stateless entrypoint and used directly as the Durable Object name, so no registry or KV mapping is needed. A colliding code is detected by the object already holding a room, which 409s so the entrypoint retries.
 - Monopol wins with all four Railroads plus one complete street group; Run-Down applies a persisted 30-second turn deadline.
 - Building, selling, mortgaging and proposing trades are restricted to the owner's own `awaiting-roll` phase. Official rules allow them at any time, including during another player's turn; the engine covers the solvency case that matters by auto-liquidating in `raiseCash` when a debt cannot be paid. This is a deliberate divergence, not an oversight.
-- Root PeerJS code remains temporarily only for migration comparison and should be deleted in a dedicated later commit.
+- The root PeerJS implementation was deleted in a dedicated cleanup commit once the workspace reached parity; git history is the reference if it is ever needed.
 - The active edition is the classic UK/London board: London property and station names, UK Chance/Community Chest decks, and pound-denominated UI/history. Numeric prices, rents, and balances remain plain integers internally.
 
 ## Gotchas
@@ -31,7 +31,7 @@ Monopoly is a pnpm-workspace React 18 and TypeScript multiplayer game. A shared 
 - Wrangler dry-runs may need access to its user-level log/config directory.
 - `apps/web/.env.local` should use `socketio` with `http://localhost:4000` for local development.
 - Production `ALLOWED_ORIGIN` must be changed from localhost to the actual Pages/custom origin.
-- The old root `package-lock.json`, `yarn.lock`, `docs/`, and PeerJS `src/` should be removed only in a dedicated cleanup commit.
+- `.eslintrc.cjs` survives at the root but no package installs ESLint and there is no lint script, so it configures tooling that is not present. Wire it up or delete it; do not assume `pnpm lint` exists.
 - The Worker's `/ws` upgrade requires `?room=CODE`. Without it the request cannot be routed to the right room's Durable Object and is rejected with 400. The Socket.IO transport ignores the parameter.
 - The workspace is pinned to pnpm 9.12.3. If a Codex fallback runtime exposes pnpm 11, use `/opt/homebrew/bin/pnpm`; pnpm 11 may request an unintended `node_modules` purge.
 - When changing coded-board grid track ratios, update the rotated left/right `.board-space-inner` dimensions as reciprocal geometry; leaving the former 2:1 dimensions on the 1.6:1 side tracks makes labels spill across the board.
@@ -50,6 +50,14 @@ pnpm build
 ## Change Log
 
 <!-- Newest first. Record meaningful features, fixes, migrations, refactors, or dependency changes. -->
+
+### 2026-08-09 — Claude
+
+- Removed: The retired root PeerJS application — `src/`, `docs/`, `public/`, `index.html`, `vite.config.ts`, and the root `tsconfig.json` — totalling 226 tracked files and roughly 48 MB. This is the cleanup commit the migration had been deferring since 2026-07-11.
+- Why: It was dead weight that no longer had a reader, and its stray `vite.config.ts` was actively harmful — Vitest walked up to it from every package and failed on an uninstalled plugin, which is what broke `pnpm test` repo-wide until per-package configs were added.
+- Verified isolated before deleting: no workspace `tsconfig.json` extends the root one, nothing under `apps/` or `packages/` imports from root `src/`, the workspace globs cover only `apps/*` and `packages/*`, and root `tsconfig.json` was scoped to `"include": ["src"]`. The root `public/` belonged to the old Vite root; `apps/web` bundles its own assets from `apps/web/src/assets`.
+- Kept: `.eslintrc.cjs`. Removing lint configuration is a separate decision, though no package currently installs ESLint.
+- Validation: 34 engine + 6 Node + 2 Worker tests, workspace type-check, web production build, and Worker dry-run all pass after removal, and running dev servers were unaffected.
 
 ### 2026-08-09 — Claude
 
