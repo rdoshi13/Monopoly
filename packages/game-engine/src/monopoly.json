@@ -1,20 +1,20 @@
 {
     "properties": [
         {
-            "name": "Mediterranean Avenue",
-            "id": "mediterraneanave",
+            "name": "Old Kent Road",
+            "id": "oldkentroad",
             "posistion": 1,
             "price": 60,
             "rent": 2,
             "multpliedrent": [10, 30, 90, 160, 250],
             "housecost": 50,
-            "group": "Purple",
+            "group": "Brown",
             "ownedby": -1,
             "buildings": 0,
             "mortgaged": false,
             "probability": 2.1314,
             "rel": {
-                "Square": "Mediterranean Avenue",
+                "Square": "Old Kent Road",
                 "Probability % (Jail Short)": 2.1314,
                 "Rank": 36,
                 "Probability % (Jail Long)": 2.0073
@@ -24,20 +24,20 @@
             "averageProbability": 2.06935
         },
         {
-            "name": "Baltic Avenue",
-            "id": "balticave",
+            "name": "Whitechapel Road",
+            "id": "whitechapelroad",
             "posistion": 3,
             "price": 60,
             "rent": 4,
             "multpliedrent": [20, 60, 180, 320, 450],
             "housecost": 50,
-            "group": "Purple",
+            "group": "Brown",
             "ownedby": -1,
             "buildings": 0,
             "mortgaged": false,
             "probability": 2.1624,
             "rel": {
-                "Square": "Baltic Avenue",
+                "Square": "Whitechapel Road",
                 "Probability % (Jail Short)": 2.1624,
                 "Rank": 35,
                 "Probability % (Jail Long)": 2.0369
@@ -47,19 +47,19 @@
             "averageProbability": 2.09965
         },
         {
-            "name": "Oriental Avenue",
-            "id": "orientalave",
+            "name": "The Angel Islington",
+            "id": "theangelislington",
             "posistion": 6,
             "price": 100,
             "rent": 6,
             "multpliedrent": [30, 90, 270, 400, 550],
             "housecost": 50,
-            "group": "lightgreen",
+            "group": "Light Blue",
             "ownedby": -1,
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "Oriental Avenue",
+                "Square": "The Angel Islington",
                 "Probability % (Jail Short)": 2.2621,
                 "Rank": 32,
                 "Probability % (Jail Long)": 2.1317
@@ -69,19 +69,19 @@
             "averageProbability": 2.1969000000000003
         },
         {
-            "name": "Vermont Avenue",
-            "id": "vermontave",
+            "name": "Euston Road",
+            "id": "eustonroad",
             "posistion": 8,
             "price": 100,
             "rent": 6,
             "multpliedrent": [30, 90, 270, 400, 550],
             "housecost": 50,
-            "group": "lightgreen",
+            "group": "Light Blue",
             "ownedby": -1,
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "Vermont Avenue",
+                "Square": "Euston Road",
                 "Probability % (Jail Short)": 2.321,
                 "Rank": 28,
                 "Probability % (Jail Long)": 2.1874
@@ -91,19 +91,19 @@
             "averageProbability": 2.2542
         },
         {
-            "name": "Connecticut Avenue",
-            "id": "connecticutave",
+            "name": "Pentonville Road",
+            "id": "pentonvilleroad",
             "posistion": 9,
             "price": 120,
             "rent": 8,
             "multpliedrent": [40, 100, 300, 450, 600],
             "housecost": 50,
-            "group": "lightgreen",
+            "group": "Light Blue",
             "ownedby": -1,
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "Connecticut Avenue",
+                "Square": "Pentonville Road",
                 "Probability % (Jail Short)": 2.3003,
                 "Rank": 30,
                 "Probability % (Jail Long)": 2.168
@@ -113,19 +113,19 @@
             "averageProbability": 2.23415
         },
         {
-            "name": "St. Charles Place",
-            "id": "stcharlesplace",
+            "name": "Pall Mall",
+            "id": "pallmall",
             "posistion": 11,
             "price": 140,
             "rent": 10,
             "multpliedrent": [50, 150, 450, 625, 750],
             "housecost": 100,
-            "group": "Violet",
+            "group": "Pink",
             "ownedby": -1,
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "St. Charles Place",
+                "Square": "Pall Mall",
                 "Probability % (Jail Short)": 2.7017,
                 "Rank": 15,
                 "Probability % (Jail Long)": 2.556
@@ -135,19 +135,19 @@
             "averageProbability": 2.62885
         },
         {
-            "name": "States Avenue",
-            "id": "statesave",
+            "name": "Whitehall",
+            "id": "whitehall",
             "posistion": 13,
             "price": 140,
             "rent": 10,
             "multpliedrent": [50, 150, 450, 625, 750],
             "housecost": 100,
-            "group": "Violet",
+            "group": "Pink",
             "ownedby": -1,
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "States Avenue",
+                "Square": "Whitehall",
                 "Probability % (Jail Short)": 2.3721,
                 "Rank": 29,
                 "Probability % (Jail Long)": 2.1741
@@ -157,19 +157,19 @@
             "averageProbability": 2.2731000000000003
         },
         {
-            "name": "Virginia Avenue",
-            "id": "virginiaave",
+            "name": "Northumberland Avenue",
+            "id": "northumberlandavenue",
             "posistion": 14,
             "price": 160,
             "rent": 12,
             "multpliedrent": [60, 180, 500, 700, 900],
             "housecost": 100,
-            "group": "Violet",
+            "group": "Pink",
             "ownedby": -1,
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "Virginia Avenue",
+                "Square": "Northumberland Avenue",
                 "Probability % (Jail Short)": 2.4649,
                 "Rank": 22,
                 "Probability % (Jail Long)": 2.4255
@@ -179,8 +179,8 @@
             "averageProbability": 2.4452
         },
         {
-            "name": "St. James Place",
-            "id": "stjamesplace",
+            "name": "Bow Street",
+            "id": "bowstreet",
             "posistion": 16,
             "price": 180,
             "rent": 14,
@@ -191,7 +191,7 @@
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "St. James Place",
+                "Square": "Bow Street",
                 "Probability % (Jail Short)": 2.7924,
                 "Rank": 9,
                 "Probability % (Jail Long)": 2.6802
@@ -201,8 +201,8 @@
             "averageProbability": 2.7363
         },
         {
-            "name": "Tennessee Avenue",
-            "id": "tennesseeave",
+            "name": "Marlborough Street",
+            "id": "marlboroughstreet",
             "posistion": 18,
             "price": 180,
             "rent": 14,
@@ -213,7 +213,7 @@
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "Tennessee Avenue",
+                "Square": "Marlborough Street",
                 "Probability % (Jail Short)": 2.9356,
                 "Rank": 6,
                 "Probability % (Jail Long)": 2.821
@@ -223,8 +223,8 @@
             "averageProbability": 2.8783000000000003
         },
         {
-            "name": "New York Avenue",
-            "id": "newyorkave",
+            "name": "Vine Street",
+            "id": "vinestreet",
             "posistion": 19,
             "price": 200,
             "rent": 16,
@@ -235,7 +235,7 @@
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "New York Avenue",
+                "Square": "Vine Street",
                 "Probability % (Jail Short)": 3.0852,
                 "Rank": 7,
                 "Probability % (Jail Long)": 2.8118
@@ -245,8 +245,8 @@
             "averageProbability": 2.9485
         },
         {
-            "name": "Kentucky Avenue",
-            "id": "kentuckyave",
+            "name": "Strand",
+            "id": "strand",
             "posistion": 21,
             "price": 220,
             "rent": 18,
@@ -257,7 +257,7 @@
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "Kentucky Avenue",
+                "Square": "Strand",
                 "Probability % (Jail Short)": 2.8358,
                 "Rank": 12,
                 "Probability % (Jail Long)": 2.6143
@@ -267,8 +267,8 @@
             "averageProbability": 2.72505
         },
         {
-            "name": "Indiana Avenue",
-            "id": "indianaave",
+            "name": "Fleet Street",
+            "id": "fleetstreet",
             "posistion": 23,
             "price": 220,
             "rent": 18,
@@ -279,7 +279,7 @@
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "Indiana Avenue",
+                "Square": "Fleet Street",
                 "Probability % (Jail Short)": 2.7357,
                 "Rank": 14,
                 "Probability % (Jail Long)": 2.5671
@@ -289,8 +289,8 @@
             "averageProbability": 2.6513999999999998
         },
         {
-            "name": "Illinois Avenue",
-            "id": "illinoisave",
+            "name": "Trafalgar Square",
+            "id": "trafalgarsquare",
             "posistion": 24,
             "price": 240,
             "rent": 20,
@@ -301,7 +301,7 @@
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "Illinois Avenue",
+                "Square": "Trafalgar Square",
                 "Probability % (Jail Short)": 3.1858,
                 "Rank": 2,
                 "Probability % (Jail Long)": 2.9929
@@ -311,8 +311,8 @@
             "averageProbability": 3.08935
         },
         {
-            "name": "Atlantic Avenue",
-            "id": "atlanticave",
+            "name": "Leicester Square",
+            "id": "leicestersquare",
             "posistion": 26,
             "price": 260,
             "rent": 22,
@@ -323,7 +323,7 @@
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "Atlantic Avenue",
+                "Square": "Leicester Square",
                 "Probability % (Jail Short)": 2.7072,
                 "Rank": 16,
                 "Probability % (Jail Long)": 2.537
@@ -333,8 +333,8 @@
             "averageProbability": 2.6220999999999997
         },
         {
-            "name": "Ventnor Avenue",
-            "id": "ventnorave",
+            "name": "Coventry Street",
+            "id": "coventrystreet",
             "posistion": 27,
             "price": 260,
             "rent": 22,
@@ -345,7 +345,7 @@
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "Ventnor Avenue",
+                "Square": "Coventry Street",
                 "Probability % (Jail Short)": 2.6789,
                 "Rank": 18,
                 "Probability % (Jail Long)": 2.5191
@@ -355,8 +355,8 @@
             "averageProbability": 2.599
         },
         {
-            "name": "Marvin Gardens",
-            "id": "marvingardens",
+            "name": "Piccadilly",
+            "id": "piccadilly",
             "posistion": 29,
             "price": 280,
             "rent": 22,
@@ -367,7 +367,7 @@
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "Marvin Gardens",
+                "Square": "Piccadilly",
                 "Probability % (Jail Short)": 2.5861,
                 "Rank": 21,
                 "Probability % (Jail Long)": 2.4381
@@ -377,19 +377,19 @@
             "averageProbability": 2.5121
         },
         {
-            "name": "Pacific Avenue",
-            "id": "pacificave",
+            "name": "Regent Street",
+            "id": "regentstreet",
             "posistion": 31,
             "price": 300,
             "rent": 26,
             "multpliedrent": [130, 390, 900, 1100, 1275],
             "housecost": 200,
-            "group": "darkgreen",
+            "group": "Green",
             "ownedby": -1,
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "Pacific Avenue",
+                "Square": "Regent Street",
                 "Probability % (Jail Short)": 2.6774,
                 "Rank": 17,
                 "Probability % (Jail Long)": 2.5236
@@ -399,19 +399,19 @@
             "averageProbability": 2.6005000000000003
         },
         {
-            "name": "North Carolina Avenue",
-            "id": "northcarolinaave",
+            "name": "Oxford Street",
+            "id": "oxfordstreet",
             "posistion": 32,
             "price": 300,
             "rent": 26,
             "multpliedrent": [130, 390, 900, 1100, 1275],
             "housecost": 200,
-            "group": "darkgreen",
+            "group": "Green",
             "ownedby": -1,
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "North Carolina Avenue",
+                "Square": "Oxford Street",
                 "Probability % (Jail Short)": 2.6252,
                 "Rank": 20,
                 "Probability % (Jail Long)": 2.4721
@@ -421,19 +421,19 @@
             "averageProbability": 2.5486500000000003
         },
         {
-            "name": "Pennsylvania Avenue",
-            "id": "pennsylvaniaave",
+            "name": "Bond Street",
+            "id": "bondstreet",
             "posistion": 34,
             "price": 320,
             "rent": 28,
             "multpliedrent": [150, 450, 1000, 1200, 1400],
             "housecost": 200,
-            "group": "darkgreen",
+            "group": "Green",
             "ownedby": -1,
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "Pennsylvania Avenue",
+                "Square": "Bond Street",
                 "Probability % (Jail Short)": 2.5006,
                 "Rank": 23,
                 "Probability % (Jail Long)": 2.3531
@@ -443,19 +443,19 @@
             "averageProbability": 2.42685
         },
         {
-            "name": "Park Place",
-            "id": "parkplace",
+            "name": "Park Lane",
+            "id": "parklane",
             "posistion": 37,
             "price": 350,
             "rent": 35,
             "multpliedrent": [175, 500, 1100, 1300, 1500],
             "housecost": 200,
-            "group": "darkblue",
+            "group": "Dark Blue",
             "ownedby": -1,
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "Park Place",
+                "Square": "Park Lane",
                 "Probability % (Jail Short)": 2.1864,
                 "Rank": 33,
                 "Probability % (Jail Long)": 2.0595
@@ -465,19 +465,19 @@
             "averageProbability": 2.12295
         },
         {
-            "name": "Boardwalk",
-            "id": "boardwalk",
+            "name": "Mayfair",
+            "id": "mayfair",
             "posistion": 39,
             "price": 400,
             "rent": 50,
             "multpliedrent": [200, 600, 1400, 1700, 2000],
             "housecost": 200,
-            "group": "darkblue",
+            "group": "Dark Blue",
             "ownedby": -1,
             "buildings": 0,
             "mortgaged": false,
             "rel": {
-                "Square": "Boardwalk",
+                "Square": "Mayfair",
                 "Probability % (Jail Short)": 2.626,
                 "Rank": 19,
                 "Probability % (Jail Long)": 2.4832
@@ -521,8 +521,8 @@
             "averageProbability": 2.72905
         },
         {
-            "name": "Reading Railroad",
-            "id": "readingrailroad",
+            "name": "King’s Cross Station",
+            "id": "kingscrossstation",
             "posistion": 5,
             "price": 200,
             "group": "Railroad",
@@ -530,7 +530,7 @@
             "mortgaged": false,
             "probability": 2.1314,
             "rel": {
-                "Square": "Reading Railroad",
+                "Square": "King’s Cross Station",
                 "Probability % (Jail Short)": 2.9631,
                 "Rank": 8,
                 "Probability % (Jail Long)": 2.801
@@ -539,15 +539,15 @@
             "averageProbability": 2.88205
         },
         {
-            "name": "Pennsylvania Railroad",
-            "id": "pennsylvaniarailroad",
+            "name": "Marylebone Station",
+            "id": "marylebonestation",
             "posistion": 15,
             "price": 200,
             "group": "Railroad",
             "ownedby": -1,
             "mortgaged": false,
             "rel": {
-                "Square": "Pennsylvania Railroad",
+                "Square": "Marylebone Station",
                 "Probability % (Jail Short)": 2.92,
                 "Rank": 11,
                 "Probability % (Jail Long)": 2.6354
@@ -556,8 +556,8 @@
             "averageProbability": 2.7777000000000003
         },
         {
-            "name": "B. & O. Railroad",
-            "id": "borailroad",
+            "name": "Fenchurch St. Station",
+            "id": "fenchurchststation",
             "posistion": 25,
             "price": 200,
             "group": "Railroad",
@@ -567,8 +567,8 @@
             "averageProbability": 2.975
         },
         {
-            "name": "Short Line Railroad",
-            "id": "shortlinerailroad",
+            "name": "Liverpool St. Station",
+            "id": "liverpoolststation",
             "posistion": 35,
             "price": 200,
             "group": "Railroad",
@@ -715,8 +715,8 @@
             "averageProbability": 0
         },
         {
-            "name": "Luxury Tax",
-            "id": "luxerytax",
+            "name": "Super Tax",
+            "id": "supertax",
             "group": "Special",
             "posistion": 38,
             "averageProbability": 2.116
@@ -724,144 +724,87 @@
     ],
     "tiles": [
         { "id": "go" },
-        { "id": "mediterraneanave" },
+        { "id": "oldkentroad" },
         { "id": "communitychest" },
-        { "id": "balticave" },
+        { "id": "whitechapelroad" },
         { "id": "incometax" },
-        { "id": "readingrailroad" },
-        { "id": "orientalave" },
+        { "id": "kingscrossstation" },
+        { "id": "theangelislington" },
         { "id": "chance" },
-        { "id": "vermontave" },
-        { "id": "connecticutave" },
+        { "id": "eustonroad" },
+        { "id": "pentonvilleroad" },
         { "id": "jail" },
-        { "id": "stcharlesplace" },
+        { "id": "pallmall" },
         { "id": "electriccompany" },
-        { "id": "statesave" },
-        { "id": "virginiaave" },
-        { "id": "pennsylvaniarailroad" },
-        { "id": "stjamesplace" },
+        { "id": "whitehall" },
+        { "id": "northumberlandavenue" },
+        { "id": "marylebonestation" },
+        { "id": "bowstreet" },
         { "id": "communitychest" },
-        { "id": "tennesseeave" },
-        { "id": "newyorkave" },
+        { "id": "marlboroughstreet" },
+        { "id": "vinestreet" },
         { "id": "freeparking" },
-        { "id": "kentuckyave" },
+        { "id": "strand" },
         { "id": "chance" },
-        { "id": "indianaave" },
-        { "id": "illinoisave" },
-        { "id": "borailroad" },
-        { "id": "atlanticave" },
-        { "id": "ventnorave" },
+        { "id": "fleetstreet" },
+        { "id": "trafalgarsquare" },
+        { "id": "fenchurchststation" },
+        { "id": "leicestersquare" },
+        { "id": "coventrystreet" },
         { "id": "waterworks" },
-        { "id": "marvingardens" },
+        { "id": "piccadilly" },
         { "id": "gotojail" },
-        { "id": "pacificave" },
-        { "id": "northcarolinaave" },
+        { "id": "regentstreet" },
+        { "id": "oxfordstreet" },
         { "id": "communitychest" },
-        { "id": "pennsylvaniaave" },
-        { "id": "shortlinerailroad" },
+        { "id": "bondstreet" },
+        { "id": "liverpoolststation" },
         { "id": "chance" },
-        { "id": "parkplace" },
-        { "id": "luxerytax" },
-        { "id": "boardwalk" }
+        { "id": "parklane" },
+        { "id": "supertax" },
+        { "id": "mayfair" }
     ],
     "chance": [
         {
-            "title": "Advance to Go (Collect $200)",
+            "title": "Advance to Go; collect £200",
             "action": "move",
             "tileid": "go"
         },
         {
-            "title": "Advance to Illinois Avenue - If you pass Go, collect $200",
+            "title": "Advance to Trafalgar Square; collect £200 if you pass Go",
             "action": "move",
-            "tileid": "illinoisave"
+            "tileid": "trafalgarsquare"
         },
         {
-            "title": "Advance to St. Charles Place - If you pass Go, collect $200",
+            "title": "Advance to Mayfair",
             "action": "move",
-            "tileid": "stcharlesplace"
+            "tileid": "mayfair"
         },
         {
-            "title": "Advance token to nearest Utility. If unowned, you may buy it from the Bank. If owned, throw dice and pay owner a total ten times the amount thrown.",
-            "action": "movenearest",
-            "groupid": "utility",
-            "rentmultiplier": 10
+            "title": "Advance to Pall Mall; collect £200 if you pass Go",
+            "action": "move",
+            "tileid": "pallmall"
         },
         {
-            "title": "Advance token to the nearest Railroad and pay owner twice the rental to which he/she is otherwise entitled. If Railroad is unowned, you may buy it from the Bank.",
+            "title": "Advance to the nearest Station; if owned, pay double rent",
             "action": "movenearest",
             "groupid": "railroad",
             "rentmultiplier": 2
         },
         {
-            "title": "Bank pays you dividend of $50",
-            "action": "addfunds",
-            "amount": 50
+            "title": "Advance to the nearest Station; if owned, pay double rent",
+            "action": "movenearest",
+            "groupid": "railroad",
+            "rentmultiplier": 2
         },
         {
-            "title": "Get out of Jail Free - This card may be kept until needed, or traded/sold",
-            "action": "jail",
-            "subaction": "getout"
+            "title": "Advance to the nearest Utility; if owned, roll the dice and pay 10 times the roll",
+            "action": "movenearest",
+            "groupid": "utility",
+            "rentmultiplier": 10
         },
         {
-            "title": "Go Back 3 Spaces",
-            "action": "move",
-            "count": -3
-        },
-        {
-            "title": "Go to Jail - Go directly to Jail - Do not pass Go, do not collect $200",
-            "action": "jail",
-            "subaction": "goto"
-        },
-        {
-            "title": "Make general repairs on all your property - For each house pay $25 - For each hotel $100",
-            "action": "propertycharges",
-            "buildings": 25,
-            "hotels": 100
-        },
-        {
-            "title": "Pay poor tax of $15",
-            "action": "removefunds",
-            "amount": 15
-        },
-        {
-            "title": "Take a trip to Reading Railroad - If you pass Go, collect $200",
-            "action": "move",
-            "tileid": "readingrailroad"
-        },
-        {
-            "title": "Take a walk on the Boardwalk - Advance token to Boardwalk",
-            "action": "move",
-            "tileid": "boardwalk"
-        },
-        {
-            "title": "You have been elected Chairman of the Board - Pay each player $50",
-            "action": "removefundstoplayers",
-            "amount": 50
-        },
-        {
-            "title": "Your building loan matures - Collect $150",
-            "action": "addfunds",
-            "amount": 150
-        }
-    ],
-    "communitychest": [
-        {
-            "title": "Advance to Go (Collect $200)",
-            "action": "move",
-            "tileid": "go"
-        },
-        {
-            "title": "Bank error in your favor - Collect $200 ",
-            "action": "addfunds",
-            "amount": 200
-        },
-        {
-            "title": "Doctor fee - Pay $50",
-            "action": "removefunds",
-            "amount": 50
-        },
-        {
-            "title": "From sale of stock you get $50",
+            "title": "Bank pays dividend; collect £50",
             "action": "addfunds",
             "amount": 50
         },
@@ -871,58 +814,121 @@
             "subaction": "getout"
         },
         {
-            "title": "Go to Jail - Go directly to jail - Do not pass Go - Do not collect $200",
+            "title": "Go Back 3 Spaces",
+            "action": "move",
+            "count": -3
+        },
+        {
+            "title": "Go directly to Jail",
             "action": "jail",
             "subaction": "goto"
         },
         {
-            "title": "Grand Opera Night - Collect $50 from every player for opening night seats",
-            "action": "addfundsfromplayers",
+            "title": "General repairs: pay £25 per house and £100 per hotel",
+            "action": "propertycharges",
+            "buildings": 25,
+            "hotels": 100
+        },
+        {
+            "title": "Speeding fine; pay £15",
+            "action": "removefunds",
+            "amount": 15
+        },
+        {
+            "title": "Take a trip to King’s Cross Station; collect £200 if you pass Go",
+            "action": "move",
+            "tileid": "kingscrossstation"
+        },
+        {
+            "title": "Elected Chairman of the Board; pay each player £50",
+            "action": "removefundstoplayers",
             "amount": 50
         },
         {
-            "title": "Holiday Fund matures - Receive $100",
+            "title": "Building loan matures; collect £150",
+            "action": "addfunds",
+            "amount": 150
+        }
+    ],
+    "communitychest": [
+        {
+            "title": "Advance to Go; collect £200",
+            "action": "move",
+            "tileid": "go"
+        },
+        {
+            "title": "Bank error in your favour; collect £200",
+            "action": "addfunds",
+            "amount": 200
+        },
+        {
+            "title": "Doctor’s fee; pay £50",
+            "action": "removefunds",
+            "amount": 50
+        },
+        {
+            "title": "Sale of stock; collect £50",
+            "action": "addfunds",
+            "amount": 50
+        },
+        {
+            "title": "Get Out of Jail Free",
+            "action": "jail",
+            "subaction": "getout"
+        },
+        {
+            "title": "Go directly to Jail",
+            "action": "jail",
+            "subaction": "goto"
+        },
+        {
+            "title": "Holiday fund matures; collect £100",
             "action": "addfunds",
             "amount": 100
         },
         {
-            "title": "Income tax refund - Collect $20",
+            "title": "Income tax refund; collect £20",
             "action": "addfunds",
             "amount": 20
         },
         {
-            "title": "Life insurance matures - Collect $100",
+            "title": "Birthday; collect £10 from every player",
+            "action": "addfundsfromplayers",
+            "amount": 10
+        },
+        {
+            "title": "Life insurance matures; collect £100",
             "action": "addfunds",
             "amount": 100
         },
         {
-            "title": "Pay hospital fees of $100",
+            "title": "Hospital fees; pay £100",
             "action": "removefunds",
             "amount": 100
         },
         {
-            "title": "Pay school fees of $150",
+            "title": "School fees; pay £50",
             "action": "removefunds",
-            "amount": 150
+            "amount": 50
         },
         {
-            "title": "Receive $25 consultancy fee",
+            "title": "Consultancy fee; collect £25",
             "action": "addfunds",
             "amount": 25
         },
         {
-            "title": "You are assessed for street repairs - $40 per house - $115 per hotel",
+            "title": "Street repairs: pay £40 per house and £115 per hotel",
             "action": "propertycharges",
             "buildings": 40,
             "hotels": 115
         },
         {
-            "title": "You have won second prize in a beauty contest - Collect $10",
+            "title": "Second prize in a beauty contest; collect £10",
             "action": "addfunds",
             "amount": 10
         },
         {
-            "title": "You inherit $100",
+            "title": "Inherit £100",
             "action": "addfunds",
             "amount": 100
         }

@@ -21,6 +21,7 @@ Monopoly is a pnpm-workspace React 18 and TypeScript multiplayer game. A shared 
 - Node and Worker share the same snapshot/action protocol and 30-second disconnect grace behavior.
 - Monopol wins with all four Railroads plus one complete street group; Run-Down applies a persisted 30-second turn deadline.
 - Root PeerJS code remains temporarily only for migration comparison and should be deleted in a dedicated later commit.
+- The active edition is the classic UK/London board: London property and station names, UK Chance/Community Chest decks, and pound-denominated UI/history. Numeric prices, rents, and balances remain plain integers internally.
 
 ## Gotchas
 
@@ -46,6 +47,22 @@ pnpm build
 ## Change Log
 
 <!-- Newest first. Record meaningful features, fixes, migrations, refactors, or dependency changes. -->
+
+### 2026-07-13 — Codex
+
+- Fixed: Replaced independent dice/card client state with one ordered presentation queue, so compound Chance movement waits for the card reveal and Continue action before hopping to its destination and presenting any follow-up utility roll.
+- Changed: Authoritative card events now include trusted source/destination and jail movement metadata; card and dice sounds begin only when their queued presentation becomes active.
+- Added: Deterministic coverage for the exact `dice → card → utility dice` event order and nearest-Utility movement metadata.
+- Files: `packages/game-engine/src/engine.ts`, `packages/game-engine/test/engine.test.ts`, `apps/web/src/main.tsx`, and `apps/web/src/GameView.tsx`.
+- Validation: 27 engine tests, web/engine/server type-checks, web production build, Worker dry-run, and whitespace checks pass. A deterministic live browser replay confirmed dice animation → hops to Chance → Chance modal → Continue → per-space hops to Electric Company → landing deed, with no browser console errors.
+
+### 2026-07-13 — Codex
+
+- Changed: Converted the canonical board to the classic UK/London edition with 22 London streets, King’s Cross/Marylebone/Fenchurch St./Liverpool St. stations, Super Tax, Brown/Light Blue/Pink/Orange/Red/Yellow/Green/Dark Blue groups, and pound-denominated UI/history.
+- Changed: Replaced both decks with the supplied 16-card UK sets. Chance now contains two nearest-Station cards; Community Chest uses Birthday at £10 per player and School Fees at £50.
+- Added: Engine data-integrity coverage for the exact property order, station names, tax name, complete card titles, duplicate nearest-Station Chance cards, and UK-specific Community Chest values.
+- Files: `packages/game-engine/src/monopoly.json`, `packages/game-engine/src/engine.ts`, `packages/game-engine/test/engine.test.ts`, `apps/web/src/CodedBoard.tsx`, `apps/web/src/PropertyCard.tsx`, and `apps/web/src/GameView.tsx`.
+- Validation: Live two-player browser review found zero board-space overflows; the board and Old Kent Road deed displayed pounds with no dollar remnants. Workspace type-check, 27 engine tests, 3 Node integration tests, 2 Worker tests, production builds, Worker dry-run, JSON-reference checks, and whitespace checks pass.
 
 ### 2026-07-13 — Codex
 

@@ -12,7 +12,7 @@ export type ModeId = "classic" | "monopol" | "run-down";
 export type EngineEvent =
     | { type: "state"; state: GameSnapshot }
     | { type: "dice"; playerId: string; dice: [number, number]; fromPosition: number; position: number; moved: boolean; fromJail: boolean }
-    | { type: "card"; playerId: string; deck: CardDeckName; card: Card }
+    | { type: "card"; playerId: string; deck: CardDeckName; card: Card; fromPosition: number; position: number; moved: boolean; fromJail: boolean; toJail: boolean }
     | { type: "history"; action: string }
     | { type: "rejected"; playerId: string; reason: string };
 
@@ -446,7 +446,7 @@ export class GameEngine {
         if (!space) return this.endTurn();
         const id = String(space.id);
         if (id === "gotojail") { this.sendToJail(player); return this.endTurn(); }
-        if (id === "incometax" || id === "luxerytax") { this.chargeBank(player, id === "incometax" ? 200 : 100, id === "incometax" ? "income tax" : "luxury tax"); return this.endTurn(); }
+        if (id === "incometax" || id === "supertax") { this.chargeBank(player, id === "incometax" ? 200 : 100, id === "incometax" ? "income tax" : "super tax"); return this.endTurn(); }
         if (id === "chance" || id === "communitychest") return this.drawCard(player, id, rollTotal);
         if (String(space.group) === "Special") return this.endTurn();
         const owner = this.ownerOf(player.position);
@@ -487,7 +487,7 @@ export class GameEngine {
         this.pendingAuction.bids[player.id] = amount;
         this.pendingAuction.highestBid = amount;
         this.pendingAuction.highestBidderId = player.id;
-        this.history(`${player.username} bid $${amount}`);
+        this.history(`${player.username} bid £${amount}`);
         if (!this.settleAuctionIfComplete()) this.publish();
         return true;
     }
@@ -527,7 +527,7 @@ export class GameEngine {
         if (winner && space && winner.balance >= auction.highestBid) {
             winner.balance -= auction.highestBid;
             winner.properties.push({ posistion: auction.position, count: 0, group: String(space.group), mortgaged: false });
-            this.history(`${winner.username} won ${String(space.name)} for $${auction.highestBid}`);
+            this.history(`${winner.username} won ${String(space.name)} for £${auction.highestBid}`);
         } else if (space) {
             this.history(`${String(space.name)} received no bids`);
         }
@@ -693,7 +693,10 @@ export class GameEngine {
         const selected = Math.floor(this.random() * deckState.remaining.length);
         const cardIndex = deckState.remaining.splice(selected, 1)[0];
         const card = cards[cardIndex];
-        this.emit({ type: "card", playerId: player.id, deck, card });
+        const fromPosition = player.position;
+        const fromJail = player.isInJail;
+        const destination = this.cardDestination(player, card);
+        this.emit({ type: "card", playerId: player.id, deck, card, fromPosition, position: destination?.position ?? fromPosition, moved: destination !== null && destination.position !== fromPosition, fromJail, toJail: destination?.toJail ?? false });
         this.history(`${player.username} drew ${card.title}`);
         const heldForJail = card.action === "jail" && card.subaction === "getout";
         if (heldForJail) (this.heldJailCards[player.id] ??= []).push(deck);
@@ -744,10 +747,25 @@ export class GameEngine {
         player.position = next;
     }
 
-    private moveNearest(player: EnginePlayer, groupId?: string) {
+    private cardDestination(player: EnginePlayer, card: Card): { position: number; toJail: boolean } | null {
+        if (card.action === "move") {
+            if (typeof card.count === "number") return { position: (player.position + card.count + 40) % 40, toJail: false };
+            const destination = propertyById.get(card.tileid ?? "");
+            return destination ? { position: Number(destination.posistion), toJail: false } : null;
+        }
+        if (card.action === "movenearest") return { position: this.nearestPosition(player.position, card.groupid), toJail: false };
+        if (card.action === "jail" && card.subaction === "goto") return { position: 10, toJail: true };
+        return null;
+    }
+
+    private nearestPosition(position: number, groupId?: string) {
         const group = groupId === "utility" ? "Utilities" : "Railroad";
         const locations = properties.filter((property) => property.group === group).map((property) => Number(property.posistion)).sort((a, b) => a - b);
-        const next = locations.find((position) => position > player.position) ?? locations[0];
+        return locations.find((candidate) => candidate > position) ?? locations[0];
+    }
+
+    private moveNearest(player: EnginePlayer, groupId?: string) {
+        const next = this.nearestPosition(player.position, groupId);
         if (next < player.position) player.balance += 200;
         player.position = next;
     }
@@ -774,7 +792,7 @@ export class GameEngine {
         }
         from.balance -= amount;
         to.balance += amount;
-        this.history(`${from.username} paid ${amount} for ${reason}`);
+        this.history(`${from.username} paid £${amount} for ${reason}`);
         return true;
     }
 
@@ -786,7 +804,7 @@ export class GameEngine {
             return false;
         }
         player.balance -= amount;
-        this.history(`${player.username} paid $${amount} for ${reason}`);
+        this.history(`${player.username} paid £${amount} for ${reason}`);
         return true;
     }
 

@@ -3,8 +3,7 @@ import { createRoot } from "react-dom/client";
 import type { GuestSession, RoomState } from "@monopoly/shared-types";
 import type { Card, GameAction, GameSnapshot } from "@monopoly/game-engine";
 import { createGameSocket, type GameSocket } from "./socket";
-import { GameView, LobbyView, type DiceResult, type GameEvent } from "./GameView";
-import type { DrawnCardEvent } from "./GameCard";
+import { GameView, LobbyView, type CardResult, type DiceResult, type GameEvent, type GamePresentationEvent } from "./GameView";
 import { playSound } from "./assets";
 import "./styles.css";
 
@@ -32,10 +31,9 @@ function App() {
   const [game, setGame] = useState<GameSnapshot | null>(null);
   const [error, setError] = useState("");
   const [events, setEvents] = useState<GameEvent[]>([]);
-  const [diceResults, setDiceResults] = useState<DiceResult[]>([]);
-  const [drawnCard, setDrawnCard] = useState<DrawnCardEvent | null>(null);
+  const [presentationEvents, setPresentationEvents] = useState<GamePresentationEvent[]>([]);
   const eventSequence = useRef(0);
-  const diceSequence = useRef(0);
+  const presentationSequence = useRef(0);
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("disconnected");
   const socket = useRef<GameSocket | null>(null);
 
@@ -67,16 +65,15 @@ function App() {
     client.on("game:dice", (payload) => {
       const event = payload as { playerId?: unknown; dice?: unknown; fromPosition?: unknown; position?: unknown; moved?: unknown; fromJail?: unknown };
       if (typeof event.playerId !== "string" || !Array.isArray(event.dice) || event.dice.length !== 2 || !event.dice.every((die) => Number.isInteger(die) && die >= 1 && die <= 6) || !Number.isInteger(event.fromPosition) || !Number.isInteger(event.position) || typeof event.moved !== "boolean" || typeof event.fromJail !== "boolean") return;
-      const result: DiceResult = { id: diceSequence.current++, playerId: event.playerId, dice: [Number(event.dice[0]), Number(event.dice[1])], fromPosition: Number(event.fromPosition), position: Number(event.position), moved: event.moved, fromJail: event.fromJail };
-      setDiceResults((current) => [...current, result]);
-      playSound("roll");
+      const result: DiceResult = { id: presentationSequence.current++, playerId: event.playerId, dice: [Number(event.dice[0]), Number(event.dice[1])], fromPosition: Number(event.fromPosition), position: Number(event.position), moved: event.moved, fromJail: event.fromJail };
+      setPresentationEvents((current) => [...current, { kind: "dice", result }]);
       record(result.moved ? `A player rolled ${result.dice[0]} + ${result.dice[1]} and moved to space ${result.position}.` : `A player rolled ${result.dice[0]} + ${result.dice[1]}.`);
     });
     client.on("game:card", (payload) => {
-      const event = payload as { playerId?: unknown; deck?: unknown; card?: Partial<Card> };
-      if (typeof event.playerId === "string" && (event.deck === "chance" || event.deck === "communitychest") && typeof event.card?.title === "string" && typeof event.card.action === "string") {
-        setDrawnCard({ playerId: event.playerId, deck: event.deck, card: event.card as Card });
-        playSound(event.card.title.toLowerCase().includes("jail") ? "jail" : "card");
+      const event = payload as { playerId?: unknown; deck?: unknown; card?: Partial<Card>; fromPosition?: unknown; position?: unknown; moved?: unknown; fromJail?: unknown; toJail?: unknown };
+      if (typeof event.playerId === "string" && (event.deck === "chance" || event.deck === "communitychest") && typeof event.card?.title === "string" && typeof event.card.action === "string" && Number.isInteger(event.fromPosition) && Number(event.fromPosition) >= 0 && Number(event.fromPosition) < 40 && Number.isInteger(event.position) && Number(event.position) >= 0 && Number(event.position) < 40 && typeof event.moved === "boolean" && typeof event.fromJail === "boolean" && typeof event.toJail === "boolean") {
+        const result: CardResult = { id: presentationSequence.current++, playerId: event.playerId, deck: event.deck, card: event.card as Card, fromPosition: Number(event.fromPosition), position: Number(event.position), moved: event.moved, fromJail: event.fromJail, toJail: event.toJail };
+        setPresentationEvents((current) => [...current, { kind: "card", result }]);
         record(event.card.title);
       }
     });
@@ -115,8 +112,7 @@ function App() {
     setRoom(null);
     setGame(null);
     setEvents([]);
-    setDiceResults([]);
-    setDrawnCard(null);
+    setPresentationEvents([]);
     setSession(next);
   };
 
@@ -127,8 +123,7 @@ function App() {
     setRoom(null);
     setGame(null);
     setEvents([]);
-    setDiceResults([]);
-    setDrawnCard(null);
+    setPresentationEvents([]);
     setConnection("disconnected");
     setError("");
   };
@@ -145,7 +140,7 @@ function App() {
   };
 
   const send = (action: GameAction) => socket.current?.emit("game:action", action);
-  const onDicePresented = useCallback((id: number) => setDiceResults((current) => current.filter((result) => result.id !== id)), []);
+  const onPresentationComplete = useCallback((id: number) => setPresentationEvents((current) => current.filter((event) => event.result.id !== id)), []);
 
   if (!session) {
     return <main className="entry-shell"><section className="entry-card">
@@ -167,7 +162,7 @@ function App() {
 
   if (!game) return <main className="entry-shell"><section className="entry-card"><h1>Monopoly</h1><p>Synchronizing game state…</p><button onClick={leaveRoom}>Leave room</button></section></main>;
   if (game.phase === "lobby") return <LobbyView room={room} game={game} playerId={session.playerId} connection={connection} error={error} send={send} leaveRoom={leaveRoom} />;
-  return <GameView room={room} game={game} playerId={session.playerId} connection={connection} error={error} events={events} diceResults={diceResults} onDicePresented={onDicePresented} drawnCard={drawnCard} dismissDrawnCard={() => setDrawnCard(null)} send={send} leaveRoom={leaveRoom} />;
+  return <GameView room={room} game={game} playerId={session.playerId} connection={connection} error={error} events={events} presentationEvents={presentationEvents} onPresentationComplete={onPresentationComplete} send={send} leaveRoom={leaveRoom} />;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

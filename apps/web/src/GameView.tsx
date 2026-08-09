@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { boardSpaces, type GameAction, type GameSnapshot, type TradeOffer } from "@monopoly/game-engine";
 import type { RoomState } from "@monopoly/shared-types";
-import { playerTokens } from "./assets";
+import { playerTokens, playSound } from "./assets";
 import { PropertyCardModal } from "./PropertyCard";
 import { GameCardModal, type DrawnCardEvent } from "./GameCard";
 import { CodedBoard } from "./CodedBoard";
@@ -9,9 +9,12 @@ import { CodedBoard } from "./CodedBoard";
 type SendAction = (action: GameAction) => void;
 export type GameEvent = { id: number; text: string };
 export type DiceResult = { id: number; playerId: string; dice: [number, number]; fromPosition: number; position: number; moved: boolean; fromJail: boolean };
+export type CardResult = DrawnCardEvent & { id: number; fromPosition: number; position: number; moved: boolean; fromJail: boolean; toJail: boolean };
+export type GamePresentationEvent = { kind: "dice"; result: DiceResult } | { kind: "card"; result: CardResult };
 
 type RollPhase = "rolling" | "result" | "double" | "moving";
 type RollPresentation = { result: DiceResult; phase: RollPhase; faces: [number, number]; position: number; isInJail: boolean };
+type CardPresentation = { result: CardResult; phase: "card" | "moving"; position: number; isInJail: boolean };
 
 const spaceByPosition = new Map(boardSpaces.map((space) => [space.posistion, space]));
 const propertyName = (position: number) => spaceByPosition.get(position)?.name ?? `Space ${position}`;
@@ -19,6 +22,17 @@ const playerColors = ["#d43f3f", "#315dc4", "#2c9763", "#d18a22", "#7442a5", "#2
 const playerColor = (icon: number) => playerColors[icon] ?? playerColors[0];
 
 const dieFaces = ["", "⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
+
+function cardMovementPath(result: CardResult) {
+  if (!result.moved) return [];
+  if (result.toJail) return [result.position];
+  if (typeof result.card.count === "number") {
+    const direction = Math.sign(result.card.count);
+    return Array.from({ length: Math.abs(result.card.count) }, (_, index) => (result.fromPosition + direction * (index + 1) + 40) % 40);
+  }
+  const steps = (result.position - result.fromPosition + 40) % 40;
+  return Array.from({ length: steps }, (_, index) => (result.fromPosition + index + 1) % 40);
+}
 
 function DiceDisplay({ result, playerName, presentation }: { result: DiceResult; playerName: string; presentation: RollPresentation | null }) {
   const rolling = presentation?.result.id === result.id && presentation.phase === "rolling";
@@ -40,7 +54,7 @@ function TradePanel({ game, playerId, send, interactionLocked }: { game: GameSna
   const recipient = game.players.find((player) => player.id === tradeTo);
   const canPropose = !interactionLocked && game.currentPlayerId === playerId && game.phase === "awaiting-roll" && game.selectedMode.AllowDeals && !game.pendingTrade;
   const toggle = (values: number[], position: number) => values.includes(position) ? values.filter((value) => value !== position) : [...values, position];
-  const summary = (offer: TradeOffer) => `${game.players.find((player) => player.id === offer.from)?.username ?? "Player"} offers $${offer.offeredCash}${offer.offeredPositions.length ? ` and ${offer.offeredPositions.map(propertyName).join(", ")}` : ""} for $${offer.requestedCash}${offer.requestedPositions.length ? ` and ${offer.requestedPositions.map(propertyName).join(", ")}` : ""}.`;
+  const summary = (offer: TradeOffer) => `${game.players.find((player) => player.id === offer.from)?.username ?? "Player"} offers £${offer.offeredCash}${offer.offeredPositions.length ? ` and ${offer.offeredPositions.map(propertyName).join(", ")}` : ""} for £${offer.requestedCash}${offer.requestedPositions.length ? ` and ${offer.requestedPositions.map(propertyName).join(", ")}` : ""}.`;
 
   return <section className="panel trade-panel">
     <h3>Trades</h3>
@@ -59,12 +73,13 @@ function TradePanel({ game, playerId, send, interactionLocked }: { game: GameSna
   </section>;
 }
 
-export function GameView({ room, game, playerId, connection, error, events, diceResults, onDicePresented, drawnCard, dismissDrawnCard, send, leaveRoom }: { room: RoomState; game: GameSnapshot; playerId: string; connection: string; error: string; events: GameEvent[]; diceResults: DiceResult[]; onDicePresented: (id: number) => void; drawnCard: DrawnCardEvent | null; dismissDrawnCard: () => void; send: SendAction; leaveRoom: () => void }) {
+export function GameView({ room, game, playerId, connection, error, events, presentationEvents, onPresentationComplete, send, leaveRoom }: { room: RoomState; game: GameSnapshot; playerId: string; connection: string; error: string; events: GameEvent[]; presentationEvents: GamePresentationEvent[]; onPresentationComplete: (id: number) => void; send: SendAction; leaveRoom: () => void }) {
   const [, tick] = useState(0);
   const [auctionBid, setAuctionBid] = useState(1);
   const [highlightedPlayerId, setHighlightedPlayerId] = useState<string | null>(null);
   const [selectedPropertyPosition, setSelectedPropertyPosition] = useState<number | null>(null);
   const [rollPresentation, setRollPresentation] = useState<RollPresentation | null>(null);
+  const [cardPresentation, setCardPresentation] = useState<CardPresentation | null>(null);
   const [lastDiceResult, setLastDiceResult] = useState<DiceResult | null>(null);
   const highlightTimer = useRef<number | null>(null);
   const closePropertyCard = useCallback(() => setSelectedPropertyPosition(null), []);
@@ -78,7 +93,15 @@ export function GameView({ room, game, playerId, connection, error, events, dice
   }, []);
   useEffect(() => { if (!room.turnDeadline) return; const timer = setInterval(() => tick((value) => value + 1), 1000); return () => clearInterval(timer); }, [room.turnDeadline]);
   useEffect(() => () => { if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current); }, []);
-  const activeDiceResult = diceResults[0] ?? null;
+  const activePresentationEvent = presentationEvents[0] ?? null;
+  const activeDiceResult = activePresentationEvent?.kind === "dice" ? activePresentationEvent.result : null;
+  const activeCardResult = activePresentationEvent?.kind === "card" ? activePresentationEvent.result : null;
+  useEffect(() => {
+    if (activeDiceResult) playSound("roll");
+  }, [activeDiceResult]);
+  useEffect(() => {
+    if (activeCardResult) playSound(activeCardResult.card.title.toLowerCase().includes("jail") ? "jail" : "card");
+  }, [activeCardResult]);
   useLayoutEffect(() => {
     if (!activeDiceResult) return;
     let cancelled = false;
@@ -117,7 +140,7 @@ export function GameView({ room, game, playerId, connection, error, events, dice
       await wait(260);
       if (cancelled) return;
       setRollPresentation(null);
-      onDicePresented(activeDiceResult.id);
+      onPresentationComplete(activeDiceResult.id);
     })();
 
     return () => {
@@ -125,7 +148,47 @@ export function GameView({ room, game, playerId, connection, error, events, dice
       window.clearInterval(rollingInterval);
       timeouts.forEach((timeout) => { window.clearTimeout(timeout.id); timeout.resolve(); });
     };
-  }, [activeDiceResult, onDicePresented]);
+  }, [activeDiceResult, onPresentationComplete]);
+  useLayoutEffect(() => {
+    if (!activeCardResult) {
+      setCardPresentation(null);
+      return;
+    }
+    setCardPresentation({ result: activeCardResult, phase: "card", position: activeCardResult.fromPosition, isInJail: activeCardResult.fromJail });
+  }, [activeCardResult]);
+  useLayoutEffect(() => {
+    if (cardPresentation?.phase !== "moving") return;
+    const result = cardPresentation.result;
+    let cancelled = false;
+    const timeouts: Array<{ id: number; resolve: () => void }> = [];
+    const wait = (duration: number) => new Promise<void>((resolve) => timeouts.push({ id: window.setTimeout(resolve, duration), resolve }));
+
+    void (async () => {
+      for (const position of cardMovementPath(result)) {
+        setCardPresentation((current) => current?.result.id === result.id ? { ...current, position, isInJail: result.toJail && position === result.position } : current);
+        await wait(190);
+        if (cancelled) return;
+      }
+      await wait(260);
+      if (cancelled) return;
+      setCardPresentation(null);
+      onPresentationComplete(result.id);
+    })();
+
+    return () => {
+      cancelled = true;
+      timeouts.forEach((timeout) => { window.clearTimeout(timeout.id); timeout.resolve(); });
+    };
+  }, [cardPresentation?.phase, cardPresentation?.result, onPresentationComplete]);
+  const continueCardPresentation = useCallback(() => {
+    if (!cardPresentation || cardPresentation.phase !== "card") return;
+    if (!cardPresentation.result.moved) {
+      setCardPresentation(null);
+      onPresentationComplete(cardPresentation.result.id);
+      return;
+    }
+    setCardPresentation((current) => current ? { ...current, phase: "moving", isInJail: false } : current);
+  }, [cardPresentation, onPresentationComplete]);
   const me = game.players.find((player) => player.id === playerId);
   const current = game.players.find((player) => player.id === game.currentPlayerId);
   const myTurn = current?.id === playerId;
@@ -134,7 +197,7 @@ export function GameView({ room, game, playerId, connection, error, events, dice
   const winner = game.players.find((player) => player.id === game.winnerId);
   const secondsLeft = room.turnDeadline ? Math.max(0, Math.ceil((room.turnDeadline - Date.now()) / 1000)) : null;
   const playersWithConnection = game.players.map((player) => ({ ...player, connected: room.players.find((candidate) => candidate.playerId === player.id)?.connected ?? false }));
-  const presentationBusy = rollPresentation !== null || diceResults.length > 0;
+  const presentationBusy = rollPresentation !== null || cardPresentation !== null || presentationEvents.length > 0;
   const landingPropertyPosition = game.phase === "awaiting-landing" ? game.pendingLanding?.position ?? null : null;
   const displayedPropertyPosition = presentationBusy ? null : landingPropertyPosition ?? selectedPropertyPosition;
   const selectedPropertySpace = displayedPropertyPosition === null ? undefined : spaceByPosition.get(displayedPropertyPosition);
@@ -142,32 +205,37 @@ export function GameView({ room, game, playerId, connection, error, events, dice
   const selectedPropertyState = selectedPropertyOwner?.properties.find((property) => property.posistion === displayedPropertyPosition);
   const displayedDiceResult = activeDiceResult ?? lastDiceResult;
   const dicePlayerName = game.players.find((player) => player.id === displayedDiceResult?.playerId)?.username ?? "Player";
-  const cardPlayerName = game.players.find((player) => player.id === drawnCard?.playerId)?.username ?? "Player";
+  const cardPlayerName = game.players.find((player) => player.id === cardPresentation?.result.playerId)?.username ?? "Player";
   const rollingPlayerName = game.players.find((player) => player.id === rollPresentation?.result.playerId)?.username ?? "Player";
+  const animatedPresentation = rollPresentation
+    ? { playerId: rollPresentation.result.playerId, position: rollPresentation.position, isInJail: rollPresentation.isInJail, moving: rollPresentation.phase === "moving" }
+    : cardPresentation
+      ? { playerId: cardPresentation.result.playerId, position: cardPresentation.position, isInJail: cardPresentation.isInJail, moving: cardPresentation.phase === "moving" }
+      : null;
 
   return <main className="game-shell">
     <header className="game-header"><div><span className="eyebrow">Room {room.roomCode}</span><h1>Monopoly</h1></div><div className="status"><span className={`connection ${connection}`}>{connection}</span>{secondsLeft !== null && <span>{secondsLeft}s left</span>}<button className="text-button" onClick={leaveRoom}>Leave</button></div></header>
     {error && <p className="error" role="alert">{error}</p>}
     {winner && <section className="winner"><span className="eyebrow">Winner</span><h2>{winner.id === playerId ? "You won!" : `${winner.username} won!`}</h2></section>}
     <div className="game-layout">
-      <CodedBoard game={game} highlightedPlayerId={highlightedPlayerId} animatedToken={rollPresentation ? { playerId: rollPresentation.result.playerId, position: rollPresentation.position, isInJail: rollPresentation.isInJail, moving: rollPresentation.phase === "moving" } : null} onSelectProperty={setSelectedPropertyPosition} playerColor={playerColor} propertyName={propertyName} />
+      <CodedBoard game={game} highlightedPlayerId={highlightedPlayerId} animatedToken={animatedPresentation} onSelectProperty={setSelectedPropertyPosition} playerColor={playerColor} propertyName={propertyName} />
       <aside className="sidebar">
         <section className="panel turn-panel">
           <span className="eyebrow">{game.phase === "awaiting-auction" ? "Property auction" : "Current turn"}</span>
-          <h2>{rollPresentation ? rollPresentation.result.playerId === playerId ? "You're rolling" : `${rollingPlayerName} is rolling` : game.phase === "awaiting-auction" ? auctionSpace?.name ?? "Auction" : myTurn ? "Your turn" : current?.username ?? "Waiting"}</h2>
+          <h2>{rollPresentation ? rollPresentation.result.playerId === playerId ? "You're rolling" : `${rollingPlayerName} is rolling` : cardPresentation?.phase === "moving" ? `${cardPlayerName} is moving` : game.phase === "awaiting-auction" ? auctionSpace?.name ?? "Auction" : myTurn ? "Your turn" : current?.username ?? "Waiting"}</h2>
           {displayedDiceResult && <DiceDisplay result={displayedDiceResult} playerName={dicePlayerName} presentation={rollPresentation} />}
           {game.pausedPlayerId && <p>Paused while {game.players.find((player) => player.id === game.pausedPlayerId)?.username ?? "a player"} reconnects.</p>}
-          {!presentationBusy && myTurn && game.phase === "awaiting-roll" && <div className="actions">{me?.isInJail && <><button onClick={() => send({ type: "unjail", option: "pay" })}>Pay $50</button>{me.getoutCards > 0 && <button onClick={() => send({ type: "unjail", option: "card" })}>Use jail card</button>}</>}<button className="primary" onClick={() => send({ type: "roll" })}>Roll dice</button></div>}
-          {game.phase === "awaiting-auction" && game.pendingAuction && <><p>Highest bid: <strong>${game.pendingAuction.highestBid}</strong>{game.pendingAuction.highestBidderId ? ` by ${game.players.find((player) => player.id === game.pendingAuction?.highestBidderId)?.username ?? "player"}` : ""}</p>{passedAuction ? <p className="muted">You passed. Waiting for the remaining bidders.</p> : <div className="actions"><input aria-label="Auction bid" type="number" min={game.pendingAuction.highestBid + 1} max={me?.balance} value={auctionBid} onChange={(event) => setAuctionBid(Math.max(1, Math.floor(Number(event.target.value) || 1)))} /><button className="primary" onClick={() => send({ type: "auction-bid", amount: auctionBid })}>Bid</button><button className="secondary" onClick={() => send({ type: "auction-pass" })}>Pass</button></div>}</>}
+          {!presentationBusy && myTurn && game.phase === "awaiting-roll" && <div className="actions">{me?.isInJail && <><button onClick={() => send({ type: "unjail", option: "pay" })}>Pay £50</button>{me.getoutCards > 0 && <button onClick={() => send({ type: "unjail", option: "card" })}>Use jail card</button>}</>}<button className="primary" onClick={() => send({ type: "roll" })}>Roll dice</button></div>}
+          {game.phase === "awaiting-auction" && game.pendingAuction && <><p>Highest bid: <strong>£{game.pendingAuction.highestBid}</strong>{game.pendingAuction.highestBidderId ? ` by ${game.players.find((player) => player.id === game.pendingAuction?.highestBidderId)?.username ?? "player"}` : ""}</p>{passedAuction ? <p className="muted">You passed. Waiting for the remaining bidders.</p> : <div className="actions"><input aria-label="Auction bid" type="number" min={game.pendingAuction.highestBid + 1} max={me?.balance} value={auctionBid} onChange={(event) => setAuctionBid(Math.max(1, Math.floor(Number(event.target.value) || 1)))} /><button className="primary" onClick={() => send({ type: "auction-bid", amount: auctionBid })}>Bid</button><button className="secondary" onClick={() => send({ type: "auction-pass" })}>Pass</button></div>}</>}
         </section>
-        <section className="panel"><h3>Players</h3><div className="players">{playersWithConnection.map((player) => <button type="button" className={`player-card player-card-button ${player.id === game.currentPlayerId ? "active" : ""}${player.id === highlightedPlayerId ? " selected" : ""}`} style={{ "--player-color": playerColor(player.icon) } as React.CSSProperties} aria-label={`Highlight ${player.username} on the board for 3 seconds`} aria-pressed={player.id === highlightedPlayerId} onClick={() => highlightPlayer(player.id)} key={player.id}><span className={`token token-${player.icon}`}><img src={playerTokens[player.icon] ?? playerTokens[0]} alt="" /></span><span><strong>{player.username}{player.id === playerId ? " (you)" : ""}</strong><small>${player.balance} · {propertyName(player.position)}{player.isInJail ? " · Jail" : ""}</small></span><i className={player.connected ? "online" : "offline"} /></button>)}</div></section>
+        <section className="panel"><h3>Players</h3><div className="players">{playersWithConnection.map((player) => <button type="button" className={`player-card player-card-button ${player.id === game.currentPlayerId ? "active" : ""}${player.id === highlightedPlayerId ? " selected" : ""}`} style={{ "--player-color": playerColor(player.icon) } as React.CSSProperties} aria-label={`Highlight ${player.username} on the board for 3 seconds`} aria-pressed={player.id === highlightedPlayerId} onClick={() => highlightPlayer(player.id)} key={player.id}><span className={`token token-${player.icon}`}><img src={playerTokens[player.icon] ?? playerTokens[0]} alt="" /></span><span><strong>{player.username}{player.id === playerId ? " (you)" : ""}</strong><small>£{player.balance} · {propertyName(player.position)}{player.isInJail ? " · Jail" : ""}</small></span><i className={player.connected ? "online" : "offline"} /></button>)}</div></section>
         <section className="panel"><h3>Your properties</h3>{me?.properties.length ? <ul className="property-list">{me.properties.map((property) => <li key={property.posistion}><span><strong>{propertyName(property.posistion)}</strong><small>{property.count === "h" ? "Hotel" : `${property.count} houses`}{property.mortgaged ? " · Mortgaged" : ""}</small></span>{!presentationBusy && myTurn && game.phase === "awaiting-roll" && <span className="mini-actions"><button onClick={() => send({ type: "build", position: property.posistion })}>Build</button>{property.count !== 0 && <button onClick={() => send({ type: "sell-building", position: property.posistion })}>Sell</button>}<button onClick={() => send({ type: property.mortgaged ? "unmortgage" : "mortgage", position: property.posistion })}>{property.mortgaged ? "Redeem" : "Mortgage"}</button></span>}</li>)}</ul> : <p className="muted">No properties yet.</p>}<small className="muted">Bank: {game.bankSupply.houses} houses · {game.bankSupply.hotels} hotels</small></section>
         <TradePanel game={game} playerId={playerId} send={send} interactionLocked={presentationBusy} />
         <section className="panel events"><h3>Game events</h3>{events.length ? <ol>{events.map((event) => <li key={event.id}>{event.text}</li>)}</ol> : <p className="muted">Rolls, cards and payments will appear here.</p>}</section>
       </aside>
     </div>
     {rollPresentation?.phase === "double" && <div className="roll-announcement" role="status"><strong>{rollingPlayerName} rolled a double!</strong><span>Another roll follows this move.</span></div>}
-    {!presentationBusy && drawnCard ? <GameCardModal event={drawnCard} playerName={cardPlayerName} onClose={dismissDrawnCard} /> : selectedPropertySpace && <PropertyCardModal space={selectedPropertySpace} ownerName={selectedPropertyOwner?.username} mortgaged={selectedPropertyState?.mortgaged} development={selectedPropertyState?.count} sourcePosition={landingPropertyPosition ?? undefined} onClose={landingPropertyPosition === null ? closePropertyCard : undefined} actions={landingPropertyPosition !== null && myTurn ? { onBuy: () => send({ type: "landing", decision: "buy" }), onAuction: () => send({ type: "landing", decision: "skip" }) } : undefined} />}
+    {cardPresentation?.phase === "card" ? <GameCardModal event={cardPresentation.result} playerName={cardPlayerName} onClose={continueCardPresentation} /> : selectedPropertySpace && <PropertyCardModal space={selectedPropertySpace} ownerName={selectedPropertyOwner?.username} mortgaged={selectedPropertyState?.mortgaged} development={selectedPropertyState?.count} sourcePosition={landingPropertyPosition ?? undefined} onClose={landingPropertyPosition === null ? closePropertyCard : undefined} actions={landingPropertyPosition !== null && myTurn ? { onBuy: () => send({ type: "landing", decision: "buy" }), onAuction: () => send({ type: "landing", decision: "skip" }) } : undefined} />}
   </main>;
 }
 

@@ -12,14 +12,14 @@ interface CodedBoardProps {
 }
 
 const groupColors: Record<string, string> = {
-  Purple: "#955436",
-  lightgreen: "#aae0fa",
-  Violet: "#d93a96",
+  Brown: "#955436",
+  "Light Blue": "#aae0fa",
+  Pink: "#d93a96",
   Orange: "#f7941d",
   Red: "#ed1b24",
   Yellow: "#fef200",
-  darkgreen: "#1fb25a",
-  darkblue: "#0072bb",
+  Green: "#1fb25a",
+  "Dark Blue": "#0072bb",
 };
 
 const cornerTrackUnits = 1.6;
@@ -89,18 +89,14 @@ function sideClass(position: number) {
 function SpecialSpace({ space }: { space: BoardSpace }) {
   if (space.id === "chance") return <><span className="board-space-name">Chance</span><img className="board-space-special-art chance-art" src={artwork.chance} alt="" /></>;
   if (space.id === "communitychest") return <><span className="board-space-name">Community Chest</span><img className="board-space-special-art" src={artwork.chest} alt="" /></>;
-  if (space.id === "incometax") return <><span className="board-space-name">Income Tax</span><span className="board-symbol tax-symbol">◆</span><small>Pay $200</small></>;
-  if (space.id === "luxerytax") return <><span className="board-space-name">Luxury Tax</span><span className="board-symbol">💍</span><small>Pay $100</small></>;
+  if (space.id === "incometax") return <><span className="board-space-name">{space.name}</span><span className="board-symbol tax-symbol">◆</span><small>Pay £200</small></>;
+  if (space.id === "supertax") return <><span className="board-space-name">{space.name}</span><span className="board-symbol">💍</span><small>Pay £100</small></>;
   return <span className="board-space-name">{space.name}</span>;
-}
-
-function boardSpaceName(space: BoardSpace) {
-  return space.id === "mediterraneanave" ? "Mediter\u00ADranean Avenue" : space.name;
 }
 
 function CornerSpace({ space }: { space: BoardSpace }) {
   if (space.posistion === 0) return <>
-    <span className="go-kicker">Collect $200 salary as you pass</span>
+    <span className="go-kicker">Collect £200 salary as you pass</span>
     <strong className="go-title">GO</strong>
     <span className="go-arrow" aria-hidden="true">←</span>
   </>;
@@ -122,20 +118,20 @@ function Development({ count }: { count: number | "h" | undefined }) {
 function SpaceContents({ space, development }: { space: BoardSpace; development?: number | "h" }) {
   if (space.group in groupColors) return <>
     <span className="board-color-band" style={{ "--space-color": groupColors[space.group] } as CSSProperties}><Development count={development} /></span>
-    <span className="board-space-name">{boardSpaceName(space)}</span>
-    <small>${space.price}</small>
+    <span className="board-space-name">{space.name}</span>
+    <small>£{space.price}</small>
   </>;
 
   if (space.group === "Railroad") return <>
     <span className="board-space-name">{space.name}</span>
     <img className="board-space-icon railroad-icon" src={artwork.railroad} alt="" />
-    <small>${space.price}</small>
+    <small>£{space.price}</small>
   </>;
 
   if (space.group === "Utilities") return <>
     <span className="board-space-name">{space.name}</span>
     <img className="board-space-icon utility-icon" src={space.id === "waterworks" ? artwork.water : artwork.electricity} alt="" />
-    <small>${space.price}</small>
+    <small>£{space.price}</small>
   </>;
 
   return <SpecialSpace space={space} />;

@@ -13,18 +13,18 @@ interface PropertyCardModalProps {
 }
 
 const groupColors: Record<string, string> = {
-  Purple: "#955436",
-  lightgreen: "#aae0fa",
-  Violet: "#d93a96",
+  Brown: "#955436",
+  "Light Blue": "#aae0fa",
+  Pink: "#d93a96",
   Orange: "#f7941d",
   Red: "#ed1b24",
   Yellow: "#fef200",
-  darkgreen: "#1fb25a",
-  darkblue: "#0072bb",
+  Green: "#1fb25a",
+  "Dark Blue": "#0072bb",
 };
 
 function MoneyRow({ label, amount }: { label: string; amount: number }) {
-  return <li><span>{label}</span><strong>${amount}</strong></li>;
+  return <li><span>{label}</span><strong>£{amount}</strong></li>;
 }
 
 function StreetDetails({ space }: { space: BoardSpace }) {
@@ -42,7 +42,7 @@ function StreetDetails({ space }: { space: BoardSpace }) {
     </ul>
     <ul className="deed-costs">
       <MoneyRow label="House cost" amount={space.housecost ?? 0} />
-      <li><span>Hotel cost</span><strong>${space.housecost ?? 0} each<small>(plus 4 houses)</small></strong></li>
+      <li><span>Hotel cost</span><strong>£{space.housecost ?? 0} each<small>(plus 4 houses)</small></strong></li>
     </ul>
   </>;
 }
@@ -55,11 +55,11 @@ function RailroadDetails({ space }: { space: BoardSpace }) {
     </header>
     <ul className="deed-rents">
       <MoneyRow label="Rent" amount={25} />
-      <MoneyRow label="If 2 railroads are owned" amount={50} />
-      <MoneyRow label="If 3 railroads are owned" amount={100} />
-      <MoneyRow label="If 4 railroads are owned" amount={200} />
+      <MoneyRow label="If 2 stations are owned" amount={50} />
+      <MoneyRow label="If 3 stations are owned" amount={100} />
+      <MoneyRow label="If 4 stations are owned" amount={200} />
     </ul>
-    <p className="deed-rule">Railroad rent depends on how many railroads the owner holds.</p>
+    <p className="deed-rule">Station rent depends on how many stations the owner holds.</p>
   </>;
 }
 
@@ -114,9 +114,9 @@ export function PropertyCardModal({ space, ownerName, mortgaged = false, develop
       {isRailroad ? <RailroadDetails space={space} /> : isUtility ? <UtilityDetails space={space} /> : <StreetDetails space={space} />}
       <div className="deed-status" id="property-card-status">
         <span>{ownerName ? `Owned by ${ownerName}` : "Unowned"}{mortgaged ? " · Mortgaged" : ""}{developmentLabel ? ` · ${developmentLabel}` : ""}</span>
-        <span>Mortgage value <strong>${Math.floor((space.price ?? 0) / 2)}</strong></span>
+        <span>Mortgage value <strong>£{Math.floor((space.price ?? 0) / 2)}</strong></span>
       </div>
-      <footer className="deed-price"><span>Purchase price</span><strong>${space.price ?? 0}</strong></footer>
+      <footer className="deed-price"><span>Purchase price</span><strong>£{space.price ?? 0}</strong></footer>
       {actions && <div className="deed-actions"><button className="primary" type="button" onClick={actions.onBuy} ref={buyButtonRef}>Buy</button><button className="secondary" type="button" onClick={actions.onAuction}>Auction</button></div>}
     </section>
   </div>;
