@@ -13,11 +13,18 @@ type Room = {
   engine: GameEngine;
   lastEmptyAt: number | null;
   turnDeadline: number | null;
+  /** Timeout the current deadline was derived from, so a phase change restarts it. */
+  turnTimeoutSeconds: number | null;
 };
 
 type Identity = { roomCode: string; playerId: string };
 
+const ROOM_CREATIONS_PER_WINDOW = 5;
+const ROOM_CREATION_WINDOW_MS = 60_000;
+const MAX_ROOMS = 500;
+
 const rooms = new Map<string, Room>();
+const roomCreations = new Map<string, number[]>();
 const identities = new Map<string, Identity>();
 const connections = new Map<string, Set<string>>();
 const pendingDisconnects = new Map<string, ReturnType<typeof setTimeout>>();
@@ -25,6 +32,15 @@ const turnTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const code = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 const cleanName = (name: string) => name.trim().slice(0, 32);
 const identityKey = ({ roomCode, playerId }: Identity) => `${roomCode}:${playerId}`;
+
+/** Rooms live in memory until pruned, so unbounded creation is a memory-exhaustion path. */
+function allowRoomCreation(client: string, now = Date.now()): boolean {
+  const recent = (roomCreations.get(client) ?? []).filter((at) => now - at < ROOM_CREATION_WINDOW_MS);
+  roomCreations.set(client, recent);
+  if (recent.length >= ROOM_CREATIONS_PER_WINDOW) return false;
+  recent.push(now);
+  return true;
+}
 
 /** Socket payloads are untrusted; every field is checked before it reaches a room lookup. */
 function parseGuestSession(value: unknown): GuestSession | null {
@@ -68,6 +84,7 @@ function createRoom(name: string): GuestSession {
     engine,
     lastEmptyAt: Date.now(),
     turnDeadline: null,
+    turnTimeoutSeconds: null,
     players: [{ playerId, name: clean, sessionToken, connected: false }],
   });
   return { roomCode, playerId, sessionToken };
@@ -93,6 +110,8 @@ app.use(cors({ origin: true }));
 app.use(express.json());
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.post("/rooms", (req, res) => {
+  if (rooms.size >= MAX_ROOMS) return res.status(503).json({ error: "The server is at capacity, try again shortly" });
+  if (!allowRoomCreation(req.ip ?? "unknown")) return res.status(429).json({ error: "Too many rooms created, try again in a minute" });
   try {
     const name = typeof req.body?.name === "string" ? req.body.name : "";
     if (!cleanName(name)) throw new Error("Name is required");
@@ -122,12 +141,16 @@ function updateTurnDeadline(room: Room, reset: boolean) {
   if (existing) clearTimeout(existing);
   turnTimers.delete(room.roomCode);
   const snapshot = room.engine.snapshot();
-  const seconds = snapshot.selectedMode.turnTimer;
+  const seconds = snapshot.turnTimeoutSeconds;
   if (!seconds || !snapshot.gameStarted || snapshot.phase === "finished" || snapshot.pausedPlayerId) {
     room.turnDeadline = null;
+    room.turnTimeoutSeconds = null;
     return;
   }
-  if (reset || !room.turnDeadline) room.turnDeadline = Date.now() + seconds * 1000;
+  if (reset || !room.turnDeadline || room.turnTimeoutSeconds !== seconds) {
+    room.turnDeadline = Date.now() + seconds * 1000;
+    room.turnTimeoutSeconds = seconds;
+  }
   const timer = setTimeout(() => {
     if (rooms.get(room.roomCode) !== room || !room.turnDeadline || room.turnDeadline > Date.now()) return updateTurnDeadline(room, false);
     room.turnDeadline = null;
@@ -227,6 +250,11 @@ io.on("connection", (socket) => {
 });
 
 function pruneRooms(now = Date.now()) {
+  for (const [client, attempts] of roomCreations) {
+    const recent = attempts.filter((at) => now - at < ROOM_CREATION_WINDOW_MS);
+    if (recent.length) roomCreations.set(client, recent);
+    else roomCreations.delete(client);
+  }
   for (const room of rooms.values()) {
     if (room.lastEmptyAt && !room.players.some((player) => player.connected) && now - room.lastEmptyAt >= 600000) {
       const timer = turnTimers.get(room.roomCode);
@@ -239,5 +267,10 @@ function pruneRooms(now = Date.now()) {
 
 setInterval(pruneRooms, 60000).unref();
 if (process.env.NODE_ENV !== "test") httpServer.listen(Number(process.env.PORT ?? 4000));
+
+/** Test hook: the limiter is keyed by client IP, so every test would share one budget. */
+export function resetRoomCreationLimits() {
+  roomCreations.clear();
+}
 
 export { app, httpServer };

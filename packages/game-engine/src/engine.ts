@@ -7,6 +7,14 @@ const MonopolyModes: MonopolyMode[] = [
     { AllowDeals: false, WinningMode: "last-standing", Name: "Run-Down", startingCash: 1500, mortageAllowed: false, turnTimer: 30 },
 ];
 
+/**
+ * Backstop deadlines. A mode's own `turnTimer` still wins when it is shorter.
+ * Without these, one idle-but-connected player freezes a room indefinitely:
+ * disconnect-based removal never fires because the socket is still open.
+ */
+const IDLE_TURN_SECONDS = 300;
+const AUCTION_SECONDS = 60;
+
 export type GamePhase = "lobby" | "awaiting-roll" | "awaiting-landing" | "awaiting-auction" | "finished";
 export type ModeId = "classic" | "monopol" | "run-down";
 export type EngineEvent =
@@ -81,6 +89,8 @@ export interface GameSnapshot {
     heldJailCards: Record<string, CardDeckName[]>;
     turnRevision: number;
     bankSupply: { houses: number; hotels: number };
+    /** Seconds the current phase may last before `expireTurn` should be called. */
+    turnTimeoutSeconds: number | null;
 }
 
 export type GameAction =
@@ -223,6 +233,7 @@ export class GameEngine {
     private extraRollPending = false;
     private cardDecks = freshCardDecks();
     private heldJailCards: Record<string, CardDeckName[]> = {};
+    /** Bumped whenever the active deadline should restart: a new turn, or auction activity. */
     private turnRevision = 0;
     private bankSupply = { houses: 32, hotels: 12 };
     private currentPlayerRemoved = false;
@@ -345,7 +356,20 @@ export class GameEngine {
             cardDecks: this.cardDecks, heldJailCards: this.heldJailCards,
             turnRevision: this.turnRevision,
             bankSupply: this.bankSupply,
+            turnTimeoutSeconds: this.turnTimeoutSeconds,
         });
+    }
+
+    /**
+     * The deadline the transport should enforce for the current phase. Auctions
+     * get their own short clock because they block every player, not just the
+     * one whose turn it is.
+     */
+    private get turnTimeoutSeconds(): number | null {
+        if (this.phase === "lobby" || this.phase === "finished") return null;
+        const modeTimer = this.mode.turnTimer;
+        if (this.phase === "awaiting-auction") return Math.min(AUCTION_SECONDS, modeTimer ?? AUCTION_SECONDS);
+        return Math.min(IDLE_TURN_SECONDS, modeTimer ?? IDLE_TURN_SECONDS);
     }
 
     public pauseForReconnect(playerId: string): void {
@@ -493,6 +517,7 @@ export class GameEngine {
         this.pendingAuction.highestBid = amount;
         this.pendingAuction.highestBidderId = player.id;
         this.history(`${player.username} bid £${amount}`);
+        this.turnRevision += 1;
         if (!this.settleAuctionIfComplete()) this.publish();
         return true;
     }
@@ -504,6 +529,7 @@ export class GameEngine {
         delete this.pendingAuction.bids[player.id];
         this.recalculateAuctionLeader();
         this.history(`${player.username} passed the auction`);
+        this.turnRevision += 1;
         if (!this.settleAuctionIfComplete()) this.publish();
         return true;
     }
@@ -696,15 +722,26 @@ export class GameEngine {
         return moved;
     }
 
+    /** Guarantees a non-empty draw pile so a draw can never dereference a missing card. */
+    private replenishDeck(deck: CardDeckName): void {
+        const deckState = this.cardDecks[deck];
+        if (deckState.remaining.length > 0) return;
+        deckState.remaining = deckState.discard.splice(0);
+        if (deckState.remaining.length > 0) return;
+        // Normal play cannot empty both piles, because only the single Get Out of
+        // Jail Free card is ever held back. Persisted state that lost them can, so
+        // rebuild the full deck rather than drawing an undefined card.
+        deckState.remaining = (board[deck] as Card[]).map((_, index) => index);
+    }
+
     private drawCard(player: EnginePlayer, deck: CardDeckName, rollTotal: number): void {
         const cards = board[deck] as Card[];
         const deckState = this.cardDecks[deck];
-        if (deckState.remaining.length === 0) {
-            deckState.remaining = deckState.discard.splice(0);
-        }
+        this.replenishDeck(deck);
         const selected = Math.floor(this.random() * deckState.remaining.length);
         const cardIndex = deckState.remaining.splice(selected, 1)[0];
         const card = cards[cardIndex];
+        if (!card) return this.endTurn();
         const fromPosition = player.position;
         const fromJail = player.isInJail;
         const destination = this.cardDestination(player, card);

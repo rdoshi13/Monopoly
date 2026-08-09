@@ -1,7 +1,7 @@
 import { once } from "node:events";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { io, type Socket } from "socket.io-client";
-import { httpServer } from "./index.js";
+import { httpServer, resetRoomCreationLimits } from "./index.js";
 
 let baseUrl = "";
 const sockets: Socket[] = [];
@@ -16,6 +16,8 @@ afterAll(() => {
   sockets.forEach((socket) => socket.disconnect());
   return new Promise<void>((resolve) => httpServer.close(() => resolve()));
 });
+// Every test connects from the same loopback address and so shares one budget.
+beforeEach(() => resetRoomCreationLimits());
 
 async function connectSession(session: { roomCode: string; playerId: string; sessionToken: string }) {
   const socket = io(baseUrl, { transports: ["websocket"] });
@@ -69,6 +71,17 @@ describe("local room API", () => {
     process.off("uncaughtException", record);
     expect(crashes).toEqual([]);
     expect(socket.connected).toBe(true);
+  });
+
+  it("rate-limits room creation instead of allowing unbounded allocation", async () => {
+    const create = () => fetch(`${baseUrl}/rooms`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Flood" }) });
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 8; attempt += 1) statuses.push((await create()).status);
+
+    // The window allows a handful of rooms per client, then rejects the rest.
+    expect(statuses.filter((status) => status === 201).length).toBeLessThanOrEqual(5);
+    expect(statuses.at(-1)).toBe(429);
+    expect((await (await create()).json() as { error: string }).error).toMatch(/too many/i);
   });
 
   it("publishes a Run-Down deadline when the game starts", async () => {

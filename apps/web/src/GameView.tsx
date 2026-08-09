@@ -196,6 +196,9 @@ export function GameView({ room, game, playerId, connection, error, events, pres
   const passedAuction = game.pendingAuction?.passedPlayerIds.includes(playerId) ?? false;
   const winner = game.players.find((player) => player.id === game.winnerId);
   const secondsLeft = room.turnDeadline ? Math.max(0, Math.ceil((room.turnDeadline - Date.now()) / 1000)) : null;
+  // Run-Down's clock is a game rule and always shows. Every other mode only has
+  // an idle backstop, which should stay invisible until it is about to fire.
+  const showCountdown = secondsLeft !== null && (game.selectedMode.turnTimer !== undefined || secondsLeft <= 60);
   const playersWithConnection = game.players.map((player) => ({ ...player, connected: room.players.find((candidate) => candidate.playerId === player.id)?.connected ?? false }));
   const presentationBusy = rollPresentation !== null || cardPresentation !== null || presentationEvents.length > 0;
   const landingPropertyPosition = game.phase === "awaiting-landing" ? game.pendingLanding?.position ?? null : null;
@@ -214,7 +217,7 @@ export function GameView({ room, game, playerId, connection, error, events, pres
       : null;
 
   return <main className="game-shell">
-    <header className="game-header"><div><span className="eyebrow">Room {room.roomCode}</span><h1>Monopoly</h1></div><div className="status"><span className={`connection ${connection}`}>{connection}</span>{secondsLeft !== null && <span>{secondsLeft}s left</span>}<button className="text-button" onClick={leaveRoom}>Leave</button></div></header>
+    <header className="game-header"><div><span className="eyebrow">Room {room.roomCode}</span><h1>Monopoly</h1></div><div className="status"><span className={`connection ${connection}`}>{connection}</span>{showCountdown && <span>{secondsLeft}s left</span>}<button className="text-button" onClick={leaveRoom}>Leave</button></div></header>
     {error && <p className="error" role="alert">{error}</p>}
     {winner && <section className="winner"><span className="eyebrow">Winner</span><h2>{winner.id === playerId ? "You won!" : `${winner.username} won!`}</h2></section>}
     <div className="game-layout">

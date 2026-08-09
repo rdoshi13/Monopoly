@@ -471,6 +471,58 @@ describe("GameEngine authority", () => {
         expect(Number.isInteger(player(engine, "b").balance)).toBe(true);
     });
 
+    it("draws a card even when persisted state lost both card piles", () => {
+        const engine = game([0, 0, 0]);
+        ready(engine);
+        const internal = engine as unknown as {
+            players: Map<string, { position: number }>;
+            cardDecks: Record<string, { remaining: number[]; discard: number[] }>;
+        };
+        internal.players.get("a")!.position = 5;
+        internal.cardDecks.chance = { remaining: [], discard: [] };
+
+        // Rolling 1 + 1 lands Alice on the Chance space at 7.
+        expect(() => engine.handle("a", { type: "roll" })).not.toThrow();
+        expect(engine.snapshot().cardDecks.chance.remaining.length).toBe(board.chance.length - 1);
+    });
+
+    it("gives every mode a turn backstop and auctions their own shorter clock", () => {
+        const engine = game([0, 1 / 6]);
+        ready(engine);
+        // Classic declares no turnTimer, but an idle player must not freeze the room.
+        expect(engine.snapshot().selectedMode.turnTimer).toBeUndefined();
+        expect(engine.snapshot().turnTimeoutSeconds).toBe(300);
+
+        const internal = engine as unknown as { players: Map<string, { position: number }> };
+        internal.players.get("a")!.position = 3;
+        expect(engine.handle("a", { type: "roll" })).toBe(true);
+        expect(engine.handle("a", { type: "landing", decision: "skip" })).toBe(true);
+        expect(engine.snapshot().phase).toBe("awaiting-auction");
+        expect(engine.snapshot().turnTimeoutSeconds).toBe(60);
+
+        // Each bid restarts the deadline the transport enforces.
+        const beforeBid = engine.snapshot().turnRevision;
+        expect(engine.handle("b", { type: "auction-bid", amount: 10 })).toBe(true);
+        expect(engine.snapshot().turnRevision).toBe(beforeBid + 1);
+
+        // An expiring auction closes on the standing high bid instead of hanging.
+        expect(engine.expireTurn()).toBe(true);
+        expect(engine.snapshot().pendingAuction).toBeNull();
+        expect(player(engine, "b").properties.map((property) => property.posistion)).toEqual([6]);
+        expect(engine.snapshot().turnTimeoutSeconds).toBe(300);
+    });
+
+    it("keeps a lobby and a finished game off the deadline clock", () => {
+        const engine = game();
+        engine.connect("a", "Alice");
+        expect(engine.snapshot().turnTimeoutSeconds).toBeNull();
+        ready(engine);
+        expect(engine.snapshot().turnTimeoutSeconds).toBe(300);
+        engine.disconnect("b");
+        expect(engine.snapshot().phase).toBe("finished");
+        expect(engine.snapshot().turnTimeoutSeconds).toBeNull();
+    });
+
     it("auctions a declined property with validated atomic bidding", () => {
         const engine = game([0, 1 / 6]);
         ready(engine);

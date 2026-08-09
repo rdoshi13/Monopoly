@@ -50,6 +50,18 @@ pnpm build
 
 ### 2026-08-09 — Claude
 
+- Fixed: A card draw can no longer dereference a missing card. `replenishDeck` reshuffles the discard and, if both piles are somehow empty, rebuilds the full deck; the draw also returns early on a missing index. Normal play cannot empty both piles — only the single Get Out of Jail Free card is ever held back — so this hardens rehydration from persisted Durable Object state.
+- Added: Every mode now has a stall backstop. Classic and Monopol declare no `turnTimer`, so one idle-but-connected player froze a room forever: disconnect removal never fires while the socket is open. `GameSnapshot.turnTimeoutSeconds` derives the effective deadline — 300s for an ordinary turn, 60s for an auction, with a mode's own shorter `turnTimer` still winning. Auctions get their own clock because they block every player, not just the current one.
+- Changed: `turnRevision` is now bumped on auction bid and pass, so each auction action restarts the deadline rather than letting a lively auction be cut off mid-bidding. Its only consumer is the deadline-reset signal in both transports.
+- Changed: Both transports track the timeout their current deadline was derived from, so entering or leaving an auction restarts the clock instead of inheriting the previous phase's remainder.
+- Changed: The client shows the countdown only when the mode declares a `turnTimer` (Run-Down, a game rule) or when under 60s remain. Otherwise the idle backstop would render as a permanent five-minute clock in Classic.
+- Added: Room creation is capped at 5 per client IP per minute and 500 rooms per server on both transports, returning 429 and 503. Rooms were previously allocated without limit — in memory on Node, and into Durable Object storage on the Worker.
+- Files: `packages/game-engine/src/engine.ts`, `packages/game-engine/test/engine.test.ts`, `apps/server/src/index.ts`, `apps/server/src/index.test.ts`, `apps/cloudflare-server/src/index.ts`, and `apps/web/src/GameView.tsx`.
+- Validation: 32 engine + 5 Node + 2 Worker tests, workspace type-check, web build, and Worker dry-run pass. The deck-exhaustion test was confirmed to fail with the original `TypeError` against the previous implementation, and a live Socket.IO room confirmed Classic now publishes a 300s deadline where it previously published none.
+- Gotcha: The room-creation limiter is keyed by client IP, so every Node test shares one budget. `resetRoomCreationLimits()` is exported for a `beforeEach`; without it a flood test starves whatever runs after it.
+
+### 2026-08-09 — Claude
+
 - Fixed: A forced payment no longer liquidates a player's whole portfolio. `raiseCash`'s building-sale loop had no `break` (unlike the mortgage loop below it), so a player owing £50 sold every house they owned. Replaced with `sellBuildingsToRaise`, which sells one level at a time from the most developed property and stops the moment the debt is covered.
 - Changed: Because a forced sale can now stop partway, it sells highest-level-first so colour groups stay even — matching the rule `sellBuilding` already enforces for voluntary sales. A hotel sold when the bank cannot supply its four replacement houses is sold whole for five half-costs.
 - Fixed: Trade mortgage interest is charged to both sides. Only the `offered` side paid, so mortgaged properties moving the other direction transferred free. It also used `* 0.1`, which made Park Lane's £175 mortgage value charge £17.50; it now uses `Math.ceil(value / 10)`, consistent with `mortgage()`.
