@@ -51,6 +51,26 @@ describe("local room API", () => {
     expect(join.status).toBe(200);
   });
 
+  it("rejects malformed room:join payloads without crashing the process", async () => {
+    const crashes: unknown[] = [];
+    const record = (error: unknown) => crashes.push(error);
+    process.on("uncaughtException", record);
+
+    const socket = io(baseUrl, { transports: ["websocket"] });
+    sockets.push(socket);
+    await new Promise<void>((resolve) => socket.once("connect", resolve));
+
+    for (const payload of [{ roomCode: 42, playerId: "x", sessionToken: "y" }, { roomCode: ["A"] }, "not an object", null, undefined, []]) {
+      const failure = new Promise<{ code: string }>((resolve) => socket.once("game:error", resolve));
+      socket.emit("room:join", payload);
+      expect((await failure).code).toBe("AUTH_FAILED");
+    }
+
+    process.off("uncaughtException", record);
+    expect(crashes).toEqual([]);
+    expect(socket.connected).toBe(true);
+  });
+
   it("publishes a Run-Down deadline when the game starts", async () => {
     const create = await fetch(`${baseUrl}/rooms`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Timer Host" }) });
     const host = await create.json() as { roomCode: string; playerId: string; sessionToken: string };

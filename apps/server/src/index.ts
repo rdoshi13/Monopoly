@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import cors from "cors";
 import express from "express";
-import { Server } from "socket.io";
+import { Server, type Socket } from "socket.io";
 import { GameEngine, type EngineEvent } from "@monopoly/game-engine";
 import type { GuestSession, RoomPlayer } from "@monopoly/shared-types";
 
@@ -25,6 +25,26 @@ const turnTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const code = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 const cleanName = (name: string) => name.trim().slice(0, 32);
 const identityKey = ({ roomCode, playerId }: Identity) => `${roomCode}:${playerId}`;
+
+/** Socket payloads are untrusted; every field is checked before it reaches a room lookup. */
+function parseGuestSession(value: unknown): GuestSession | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const { roomCode, playerId, sessionToken } = value as Record<string, unknown>;
+  if (typeof roomCode !== "string" || typeof playerId !== "string" || typeof sessionToken !== "string") return null;
+  return { roomCode, playerId, sessionToken };
+}
+
+/** Keeps one malformed payload from taking down every in-progress room. */
+function onSocketEvent(socket: Socket, event: string, handler: (payload: unknown) => void) {
+  socket.on(event, (payload: unknown) => {
+    try {
+      handler(payload);
+    } catch (error) {
+      console.error(`socket event ${event} failed`, error);
+      socket.emit("game:error", { code: "SERVER_ERROR", message: "The server could not process that request" });
+    }
+  });
+}
 
 const roomView = (room: Room) => ({
   roomCode: room.roomCode,
@@ -131,9 +151,10 @@ function removeExpiredPlayer(room: Room, playerId: string) {
 }
 
 io.on("connection", (socket) => {
-  socket.on("room:join", (payload: GuestSession) => {
-    const room = rooms.get(payload?.roomCode?.toUpperCase());
-    const player = room?.players.find((candidate) => candidate.playerId === payload?.playerId && candidate.sessionToken === payload?.sessionToken);
+  onSocketEvent(socket, "room:join", (payload) => {
+    const session = parseGuestSession(payload);
+    const room = session ? rooms.get(session.roomCode.toUpperCase()) : undefined;
+    const player = room?.players.find((candidate) => candidate.playerId === session?.playerId && candidate.sessionToken === session?.sessionToken);
     if (!room || !player) return socket.emit("game:error", { code: "AUTH_FAILED", message: "Invalid room session" });
 
     const identity = { roomCode: room.roomCode, playerId: player.playerId };
@@ -156,7 +177,7 @@ io.on("connection", (socket) => {
     broadcast(room);
   });
 
-  socket.on("game:action", (action: unknown) => {
+  onSocketEvent(socket, "game:action", (action) => {
     const identity = identities.get(socket.id);
     const room = identity && rooms.get(identity.roomCode);
     if (!room) return socket.emit("game:error", { code: "NOT_JOINED", message: "Join a room first" });
@@ -177,7 +198,7 @@ io.on("connection", (socket) => {
     broadcast(room);
   });
 
-  socket.on("disconnect", () => {
+  onSocketEvent(socket, "disconnect", () => {
     const identity = identities.get(socket.id);
     identities.delete(socket.id);
     if (!identity) return;

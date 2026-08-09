@@ -48,6 +48,16 @@ pnpm build
 
 <!-- Newest first. Record meaningful features, fixes, migrations, refactors, or dependency changes. -->
 
+### 2026-08-09 — Claude
+
+- Fixed: `room:join` payloads are now fully type-checked before any room lookup. A non-string `roomCode` previously threw inside the Socket.IO handler and escaped as an `uncaughtException`, letting any connected client kill the Node process and every in-progress room. All socket handlers are additionally wrapped so a handler throw returns `SERVER_ERROR` instead of terminating the server.
+- Fixed: `apps/web/index.html` was a bare `<div id="root">` with no document shell. The app rendered in quirks mode (`BackCompat`), resolved as `windows-1252` rather than UTF-8, and had no viewport meta, so mobile fell back to the 980px layout viewport and scaled the whole UI to roughly 40%. Added doctype, `lang`, charset, viewport, description, and title.
+- Fixed: `pnpm test` failed at the first package. No package declared a Vitest config, so Vitest walked up to the retired root `vite.config.ts` and failed on the uninstalled `@vitejs/plugin-basic-ssl`. Added a `vitest.config.ts` to `packages/game-engine`, `apps/server`, and `apps/cloudflare-server`.
+- Added: Regression coverage asserting six malformed `room:join` payloads each return `AUTH_FAILED` with the socket still connected and no `uncaughtException`.
+- Files: `apps/server/src/index.ts`, `apps/server/src/index.test.ts`, `apps/web/index.html`, and three new `vitest.config.ts` files.
+- Validation: `pnpm test` now runs all three packages (27 engine + 4 Node + 2 Worker). The new test was confirmed to fail against the old handler. Workspace type-check passes. A live two-player game confirmed `CSS1Compat`, UTF-8, a 375px mobile layout viewport, and board geometry unchanged at 796.078px square.
+- Known-open from the same audit: forced sales liquidate every building (`raiseCash` lacks the `break` its mortgage loop has), trade mortgage interest is one-sided and can be fractional, card-deck exhaustion with an empty discard throws, non-timed modes and auctions have no stall deadline, neither backend rate-limits room creation, and the Worker routes all rooms through one Durable Object with a single storage value.
+
 ### 2026-07-13 — Codex
 
 - Fixed: Replaced independent dice/card client state with one ordered presentation queue, so compound Chance movement waits for the card reveal and Continue action before hopping to its destination and presenting any follow-up utility roll.
