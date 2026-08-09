@@ -427,6 +427,50 @@ describe("GameEngine authority", () => {
         expect(player(engine, "a").balance).toBe(1475);
     });
 
+    it("sells only as many buildings as a forced payment needs, keeping the group even", () => {
+        const engine = game([0, 0]);
+        ready(engine);
+        const internal = engine as unknown as {
+            players: Map<string, { position: number; balance: number; properties: Array<{ posistion: number; count: 0 | 4; group: string; mortgaged: boolean }> }>;
+            bankSupply: { houses: number; hotels: number };
+        };
+        // Alice holds a fully developed Brown group and no cash; Bob owns Mayfair.
+        internal.players.get("a")!.position = 37;
+        internal.players.get("a")!.balance = 0;
+        internal.players.get("a")!.properties = [
+            { posistion: 1, count: 4, group: "Brown", mortgaged: false },
+            { posistion: 3, count: 4, group: "Brown", mortgaged: false },
+        ];
+        internal.players.get("b")!.properties = [{ posistion: 39, count: 0, group: "Dark Blue", mortgaged: false }];
+        internal.bankSupply.houses = 24;
+
+        // Rolling 1 + 1 lands Alice on Mayfair, owing £50 base rent.
+        expect(engine.handle("a", { type: "roll" })).toBe(true);
+
+        const alice = player(engine, "a");
+        // Houses cost £50, so each sells for £25: exactly two cover the £50 rent.
+        expect(alice.properties.map((property) => property.count)).toEqual([3, 3]);
+        expect(alice.balance).toBe(0);
+        expect(engine.snapshot().bankSupply.houses).toBe(26);
+        expect(player(engine, "b").balance).toBe(1550);
+        expect(alice.properties.every((property) => property.mortgaged)).toBe(false);
+    });
+
+    it("charges ceilinged mortgage transfer interest to both sides of a trade", () => {
+        const engine = game();
+        ready(engine);
+        const internal = engine as unknown as { players: Map<string, { properties: Array<{ posistion: number; count: 0; group: string; mortgaged: boolean }> }> };
+        // Park Lane's £175 mortgage value makes the old 10% multiplication fractional.
+        internal.players.get("a")!.properties = [{ posistion: 37, count: 0, group: "Dark Blue", mortgaged: true }];
+        internal.players.get("b")!.properties = [{ posistion: 1, count: 0, group: "Brown", mortgaged: true }];
+        expect(engine.handle("a", { type: "trade-propose", to: "b", offeredPositions: [37], requestedPositions: [1], offeredCash: 0, requestedCash: 0 })).toBe(true);
+        expect(engine.handle("b", { type: "trade-accept" })).toBe(true);
+        // Alice receives mortgaged Old Kent Road (£30 → £3); Bob receives Park Lane (£175 → £18).
+        expect(player(engine, "a").balance).toBe(1497);
+        expect(player(engine, "b").balance).toBe(1482);
+        expect(Number.isInteger(player(engine, "b").balance)).toBe(true);
+    });
+
     it("auctions a declined property with validated atomic bidding", () => {
         const engine = game([0, 1 / 6]);
         ready(engine);

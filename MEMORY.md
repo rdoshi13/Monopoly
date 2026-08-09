@@ -50,6 +50,15 @@ pnpm build
 
 ### 2026-08-09 — Claude
 
+- Fixed: A forced payment no longer liquidates a player's whole portfolio. `raiseCash`'s building-sale loop had no `break` (unlike the mortgage loop below it), so a player owing £50 sold every house they owned. Replaced with `sellBuildingsToRaise`, which sells one level at a time from the most developed property and stops the moment the debt is covered.
+- Changed: Because a forced sale can now stop partway, it sells highest-level-first so colour groups stay even — matching the rule `sellBuilding` already enforces for voluntary sales. A hotel sold when the bank cannot supply its four replacement houses is sold whole for five half-costs.
+- Fixed: Trade mortgage interest is charged to both sides. Only the `offered` side paid, so mortgaged properties moving the other direction transferred free. It also used `* 0.1`, which made Park Lane's £175 mortgage value charge £17.50; it now uses `Math.ceil(value / 10)`, consistent with `mortgage()`.
+- Added: Regression coverage for both. Each was confirmed to fail against the previous implementation — the forced sale returned `[0, 0]` houses instead of `[3, 3]`, and the trade proposer paid nothing.
+- Files: `packages/game-engine/src/engine.ts` and `packages/game-engine/test/engine.test.ts`.
+- Validation: 29 engine + 4 Node + 2 Worker tests, workspace type-check, web production build, and Worker dry-run all pass.
+
+### 2026-08-09 — Claude
+
 - Fixed: `room:join` payloads are now fully type-checked before any room lookup. A non-string `roomCode` previously threw inside the Socket.IO handler and escaped as an `uncaughtException`, letting any connected client kill the Node process and every in-progress room. All socket handlers are additionally wrapped so a handler throw returns `SERVER_ERROR` instead of terminating the server.
 - Fixed: `apps/web/index.html` was a bare `<div id="root">` with no document shell. The app rendered in quirks mode (`BackCompat`), resolved as `windows-1252` rather than UTF-8, and had no viewport meta, so mobile fell back to the 980px layout viewport and scaled the whole UI to roughly 40%. Added doctype, `lang`, charset, viewport, description, and title.
 - Fixed: `pnpm test` failed at the first package. No package declared a Vitest config, so Vitest walked up to the retired root `vite.config.ts` and failed on the uninstalled `@vitejs/plugin-basic-ssl`. Added a `vitest.config.ts` to `packages/game-engine`, `apps/server`, and `apps/cloudflare-server`.

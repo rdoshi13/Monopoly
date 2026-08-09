@@ -145,6 +145,11 @@ function clone<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T;
 }
 
+/** A hotel counts as the fifth level above four houses. */
+function buildingLevel(property: PlayerProperty): number {
+    return property.count === "h" ? 5 : property.count;
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -649,9 +654,16 @@ export class GameEngine {
         nextTo.balance = nextTo.balance - offer.requestedCash + offer.offeredCash;
         nextFrom.properties.push(...requested);
         nextTo.properties.push(...offered);
-        const interest = offered.filter((property) => property.mortgaged).reduce((sum, property) => sum + this.mortgageValue(property.posistion) * 0.1, 0);
-        if (nextTo.balance < interest) return this.reject(player.id, "Insufficient funds for transferred mortgage interest");
-        nextTo.balance -= interest;
+        // Each side pays 10% on the mortgaged property it receives, ceilinged to
+        // whole pounds exactly as an ordinary redemption is.
+        const interestOn = (properties: PlayerProperty[]) => properties
+            .filter((property) => property.mortgaged)
+            .reduce((sum, property) => sum + Math.ceil(this.mortgageValue(property.posistion) / 10), 0);
+        const fromInterest = interestOn(requested);
+        const toInterest = interestOn(offered);
+        if (nextFrom.balance < fromInterest || nextTo.balance < toInterest) return this.reject(player.id, "Insufficient funds for transferred mortgage interest");
+        nextFrom.balance -= fromInterest;
+        nextTo.balance -= toInterest;
         this.players.set(nextFrom.id, nextFrom);
         this.players.set(nextTo.id, nextTo);
         this.pendingTrade = null;
@@ -808,18 +820,39 @@ export class GameEngine {
         return true;
     }
 
+    /**
+     * Sells one building level at a time from the most developed property, so a
+     * forced sale keeps colour groups even and stops as soon as the debt is met.
+     */
+    private sellBuildingsToRaise(player: EnginePlayer, amount: number) {
+        while (player.balance < amount) {
+            const developed = player.properties.filter((property) => buildingLevel(property) > 0);
+            if (developed.length === 0) return;
+            const highest = Math.max(...developed.map(buildingLevel));
+            const property = developed.find((candidate) => buildingLevel(candidate) === highest)!;
+            const halfCost = Math.floor(Number(propertyByPosition.get(property.posistion)?.housecost ?? 0) / 2);
+            if (property.count === "h") {
+                this.bankSupply.hotels += 1;
+                if (this.bankSupply.houses >= 4) {
+                    this.bankSupply.houses -= 4;
+                    property.count = 4;
+                    player.balance += halfCost;
+                } else {
+                    // The bank cannot supply the four replacement houses, so the whole hotel is sold.
+                    property.count = 0;
+                    player.balance += halfCost * 5;
+                }
+            } else {
+                this.bankSupply.houses += 1;
+                property.count = (property.count - 1) as 0 | 1 | 2 | 3;
+                player.balance += halfCost;
+            }
+        }
+    }
+
     private raiseCash(player: EnginePlayer, amount: number) {
         if (player.balance >= amount) return;
-        for (const property of player.properties) {
-            const level = property.count === "h" ? 5 : property.count;
-            if (level === 0) continue;
-            const space = propertyByPosition.get(property.posistion);
-            const houseCost = Number(space?.housecost ?? 0);
-            player.balance += Math.floor(houseCost / 2) * level;
-            if (property.count === "h") this.bankSupply.hotels += 1;
-            else this.bankSupply.houses += property.count;
-            property.count = 0;
-        }
+        this.sellBuildingsToRaise(player, amount);
         for (const property of player.properties) {
             if (player.balance >= amount) break;
             if (property.mortgaged) continue;
