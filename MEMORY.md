@@ -52,6 +52,19 @@ pnpm build
 
 ### 2026-08-09 — Claude
 
+- Fixed: Board labels no longer clip. Every size inside the board is now expressed in `cqi` against `.board-stage` as a query container, replacing `vw` units that silently decoupled once the board stopped being sized by viewport width. At 1280x720 this took overflowing elements from 21 to 3, all of which are the intentionally rotated corner compositions that `overflow: hidden` clips by design.
+- Fixed: The board fits the viewport. `max-width: min(100%, calc(100vh - 8rem))` on the square stage caps its height, so a 720p screen no longer has to scroll away from the sidebar to see Go and the bottom row.
+- Changed: The eight names whose longest word cannot fit a cell carry soft hyphens, applied in `CodedBoard` so the engine's canonical names stay unbroken. `hyphens: auto` was tried first and measured to do nothing — identical text width with it on and off, since the browser has no hyphenation dictionary — which left `overflow-wrap` breaking words mid-syllable into "MARLBORO/UGH" and "COMM/UNITY".
+- Fixed: The turn countdown no longer depends on the client clock. `RoomState.serverTime` accompanies the absolute deadline and the client tracks the offset, so a skewed clock cannot show a wrong or negative countdown.
+- Fixed: Sessions moved from localStorage to sessionStorage, so each tab is its own player. A second tab previously adopted the first tab's identity, and leaving in one tab pulled the session from under the others. A reload still keeps the session.
+- Fixed: Both transports now restrict CORS to `ALLOWED_ORIGIN` instead of reflecting any origin. `isAllowedOrigin` moved into `@monopoly/shared-types` so the Node server and the Worker cannot drift; `security.ts` re-exports it and keeps its tests.
+- Fixed: `.env.example` is no longer swallowed by the `*.env.*` ignore rule, so the file the README tells contributors to copy is actually committed. Added `apps/server/.env.example` documenting `ALLOWED_ORIGIN` and `PORT`.
+- Files: `apps/web/src/styles.css`, `apps/web/src/CodedBoard.tsx`, `apps/web/src/GameView.tsx`, `apps/web/src/main.tsx`, `apps/server/src/index.ts`, `apps/cloudflare-server/src/index.ts`, `apps/cloudflare-server/src/security.ts`, `packages/shared-types/src/index.ts`, `.gitignore`, and `README.md`.
+- Validation: 32 engine + 5 Node + 2 Worker tests, type-check, web build, and Worker dry-run pass. Live two-player checks confirmed a second tab joins as its own player, zero label overflow and no horizontal scroll at both 1280x720 and 375px, and hyphenated names rendering as MARL-BOROUGH and NORTH-UMBER-LAND.
+- Gotcha: Board typography must stay in `cqi`, not `vw`. The board is sized by viewport height, so a `vw`-based size inside it will not scale with the board and will overflow its cell.
+
+### 2026-08-09 — Claude
+
 - Changed: The Worker now shards one Durable Object per room via `idFromName(roomCode)`. Every room previously ran through a single object named `global` that persisted all rooms as one storage value, which serialized all concurrent games onto one request queue and would have hard-failed at Cloudflare's 128KB per-value limit as rooms accumulated.
 - Changed: Room codes are minted in the stateless entrypoint and used as the object name, so no registry or KV mapping is needed. An object that already holds a room returns 409 and the entrypoint retries with a new code, up to five attempts.
 - Changed: `/ws` now requires `?room=CODE` so the upgrade lands on the right object; `createGameSocket` takes the room code. Health, preflight, and origin rejection are answered in the entrypoint so they never spin up a room object.

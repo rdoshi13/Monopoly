@@ -29,6 +29,8 @@ pnpm dev:worker # Cloudflare Durable Object backend
 
 Copy `apps/web/.env.example` to `apps/web/.env.local`. Use `VITE_SOCKET_TRANSPORT=socketio` for the local Node backend and `websocket` for the Worker.
 
+The Node server reads `apps/server/.env.example` keys from the environment: `ALLOWED_ORIGIN` (defaults to `http://localhost:5173`) restricts CORS and Socket.IO, and `PORT` defaults to 4000. The Worker's equivalent is the `ALLOWED_ORIGIN` var in `wrangler.jsonc`, which must be changed from localhost before deploying.
+
 The active code lives only under `apps/` and `packages/`. Root `src/` is the retired PeerJS implementation retained temporarily for migration reference; it is outside the pnpm workspace and must not receive new fixes.
 
 Run `pnpm test`, `pnpm typecheck`, and `pnpm build` before deployment.

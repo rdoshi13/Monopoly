@@ -73,7 +73,7 @@ function TradePanel({ game, playerId, send, interactionLocked }: { game: GameSna
   </section>;
 }
 
-export function GameView({ room, game, playerId, connection, error, events, presentationEvents, onPresentationComplete, send, leaveRoom }: { room: RoomState; game: GameSnapshot; playerId: string; connection: string; error: string; events: GameEvent[]; presentationEvents: GamePresentationEvent[]; onPresentationComplete: (id: number) => void; send: SendAction; leaveRoom: () => void }) {
+export function GameView({ room, game, playerId, connection, error, events, presentationEvents, onPresentationComplete, clockOffset, send, leaveRoom }: { room: RoomState; game: GameSnapshot; playerId: string; connection: string; error: string; events: GameEvent[]; presentationEvents: GamePresentationEvent[]; onPresentationComplete: (id: number) => void; clockOffset: number; send: SendAction; leaveRoom: () => void }) {
   const [, tick] = useState(0);
   const [auctionBid, setAuctionBid] = useState(1);
   const [highlightedPlayerId, setHighlightedPlayerId] = useState<string | null>(null);
@@ -195,7 +195,7 @@ export function GameView({ room, game, playerId, connection, error, events, pres
   const auctionSpace = game.pendingAuction ? spaceByPosition.get(game.pendingAuction.position) : undefined;
   const passedAuction = game.pendingAuction?.passedPlayerIds.includes(playerId) ?? false;
   const winner = game.players.find((player) => player.id === game.winnerId);
-  const secondsLeft = room.turnDeadline ? Math.max(0, Math.ceil((room.turnDeadline - Date.now()) / 1000)) : null;
+  const secondsLeft = room.turnDeadline ? Math.max(0, Math.ceil((room.turnDeadline - (Date.now() + clockOffset)) / 1000)) : null;
   // Run-Down's clock is a game rule and always shows. Every other mode only has
   // an idle backstop, which should stay invisible until it is about to fire.
   const showCountdown = secondsLeft !== null && (game.selectedMode.turnTimer !== undefined || secondsLeft <= 60);

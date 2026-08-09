@@ -1,3 +1,22 @@
+function isLocalOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Shared by both transports so the Node server and the Worker cannot drift.
+ * A localhost configuration accepts any localhost port, which keeps local
+ * development workable without loosening a production origin.
+ */
+export function isAllowedOrigin(origin: string, configuredOrigin: string): boolean {
+  if (origin === configuredOrigin) return true;
+  return isLocalOrigin(configuredOrigin) && isLocalOrigin(origin);
+}
+
 export type ModeId = "classic" | "monopol" | "run-down";
 
 export interface MonopolyMode {
@@ -36,6 +55,8 @@ export interface RoomState {
   players: Array<Pick<RoomPlayer, "playerId" | "name" | "connected">>;
   locked: boolean;
   turnDeadline?: number | null;
+  /** Server clock at send time, so clients can offset an absolute deadline. */
+  serverTime: number;
 }
 
 export interface WireMessage {

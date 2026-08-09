@@ -4,7 +4,7 @@ import cors from "cors";
 import express from "express";
 import { Server, type Socket } from "socket.io";
 import { GameEngine, type EngineEvent } from "@monopoly/game-engine";
-import type { GuestSession, RoomPlayer } from "@monopoly/shared-types";
+import { isAllowedOrigin, type GuestSession, type RoomPlayer } from "@monopoly/shared-types";
 
 type Room = {
   roomCode: string;
@@ -67,6 +67,7 @@ const roomView = (room: Room) => ({
   hostPlayerId: room.hostPlayerId,
   locked: room.engine.snapshot().gameStarted,
   turnDeadline: room.turnDeadline,
+  serverTime: Date.now(),
   players: room.players.map(({ playerId, name, connected }) => ({ playerId, name, connected })),
 });
 
@@ -105,8 +106,14 @@ function joinRoom(roomCode: string, name: string): GuestSession {
   return { roomCode: room.roomCode, playerId, sessionToken };
 }
 
+// Defaults to the Vite dev origin, which also admits any other localhost port.
+const allowedOrigin = process.env.ALLOWED_ORIGIN ?? "http://localhost:5173";
+/** A same-origin or non-browser request sends no Origin, which stays permitted. */
+const corsOrigin = (origin: string | undefined, callback: (error: Error | null, allowed?: boolean) => void) =>
+  callback(null, !origin || isAllowedOrigin(origin, allowedOrigin));
+
 const app = express();
-app.use(cors({ origin: true }));
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json());
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.post("/rooms", (req, res) => {
@@ -129,7 +136,7 @@ app.post("/rooms/:code/join", (req, res) => {
 });
 
 const httpServer = createServer(app);
-const io = new Server(httpServer, { cors: { origin: true } });
+const io = new Server(httpServer, { cors: { origin: corsOrigin } });
 
 function broadcast(room: Room) {
   io.to(room.roomCode).emit("room:state", roomView(room));

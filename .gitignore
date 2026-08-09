@@ -18,6 +18,8 @@ dist-ssr
 # configuration files
 *.env
 *.env.*
+# ...but the template README tells contributors to copy must be committed.
+!.env.example
 config.ts
 config.local.ts
 

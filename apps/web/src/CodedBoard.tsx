@@ -22,6 +22,25 @@ const groupColors: Record<string, string> = {
   "Dark Blue": "#0072bb",
 };
 
+/**
+ * Break points for the words that cannot fit a board cell on one line. These are
+ * soft hyphens, so they only render when the word actually wraps, and they are
+ * presentation-only: the engine's canonical names stay unbroken. Automatic
+ * hyphenation is not an option because `hyphens: auto` needs a dictionary the
+ * browser does not always have, and without one long names break mid-syllable.
+ */
+const softHyphenatedWords: Record<string, string> = {
+  Community: "Com­mu­nity",
+  Fenchurch: "Fen­church",
+  Liverpool: "Liver­pool",
+  Marlborough: "Marl­borough",
+  Marylebone: "Maryle­bone",
+  Northumberland: "North­umber­land",
+  Pentonville: "Penton­ville",
+  Whitechapel: "White­chapel",
+};
+const hyphenate = (name: string) => name.split(" ").map((word) => softHyphenatedWords[word] ?? word).join(" ");
+
 const cornerTrackUnits = 1.6;
 const regularTrackUnits = 1;
 const boardTrackUnits = (cornerTrackUnits * 2) + (regularTrackUnits * 9);
@@ -88,10 +107,10 @@ function sideClass(position: number) {
 
 function SpecialSpace({ space }: { space: BoardSpace }) {
   if (space.id === "chance") return <><span className="board-space-name">Chance</span><img className="board-space-special-art chance-art" src={artwork.chance} alt="" /></>;
-  if (space.id === "communitychest") return <><span className="board-space-name">Community Chest</span><img className="board-space-special-art" src={artwork.chest} alt="" /></>;
-  if (space.id === "incometax") return <><span className="board-space-name">{space.name}</span><span className="board-symbol tax-symbol">◆</span><small>Pay £200</small></>;
-  if (space.id === "supertax") return <><span className="board-space-name">{space.name}</span><span className="board-symbol">💍</span><small>Pay £100</small></>;
-  return <span className="board-space-name">{space.name}</span>;
+  if (space.id === "communitychest") return <><span className="board-space-name">{hyphenate("Community Chest")}</span><img className="board-space-special-art" src={artwork.chest} alt="" /></>;
+  if (space.id === "incometax") return <><span className="board-space-name">{hyphenate(space.name)}</span><span className="board-symbol tax-symbol">◆</span><small>Pay £200</small></>;
+  if (space.id === "supertax") return <><span className="board-space-name">{hyphenate(space.name)}</span><span className="board-symbol">💍</span><small>Pay £100</small></>;
+  return <span className="board-space-name">{hyphenate(space.name)}</span>;
 }
 
 function CornerSpace({ space }: { space: BoardSpace }) {
@@ -118,18 +137,18 @@ function Development({ count }: { count: number | "h" | undefined }) {
 function SpaceContents({ space, development }: { space: BoardSpace; development?: number | "h" }) {
   if (space.group in groupColors) return <>
     <span className="board-color-band" style={{ "--space-color": groupColors[space.group] } as CSSProperties}><Development count={development} /></span>
-    <span className="board-space-name">{space.name}</span>
+    <span className="board-space-name">{hyphenate(space.name)}</span>
     <small>£{space.price}</small>
   </>;
 
   if (space.group === "Railroad") return <>
-    <span className="board-space-name">{space.name}</span>
+    <span className="board-space-name">{hyphenate(space.name)}</span>
     <img className="board-space-icon railroad-icon" src={artwork.railroad} alt="" />
     <small>£{space.price}</small>
   </>;
 
   if (space.group === "Utilities") return <>
-    <span className="board-space-name">{space.name}</span>
+    <span className="board-space-name">{hyphenate(space.name)}</span>
     <img className="board-space-icon utility-icon" src={space.id === "waterworks" ? artwork.water : artwork.electricity} alt="" />
     <small>£{space.price}</small>
   </>;

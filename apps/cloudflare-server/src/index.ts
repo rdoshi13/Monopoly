@@ -139,7 +139,7 @@ export class GameHub extends DurableObject<Env> {
     this.broadcastRoom(room);
   }
 
-  private emitState(socket: WebSocket, room: Room) { this.emit(socket, "room:state", { roomCode: room.roomCode, hostPlayerId: room.hostPlayerId, locked: room.snapshot?.gameStarted ?? false, turnDeadline: room.turnDeadline ?? null, players: room.players.map(({ playerId, name, connected }) => ({ playerId, name, connected })) }); if (room.snapshot) this.emit(socket, "game:state", room.snapshot); }
+  private emitState(socket: WebSocket, room: Room) { this.emit(socket, "room:state", { roomCode: room.roomCode, hostPlayerId: room.hostPlayerId, locked: room.snapshot?.gameStarted ?? false, turnDeadline: room.turnDeadline ?? null, serverTime: Date.now(), players: room.players.map(({ playerId, name, connected }) => ({ playerId, name, connected })) }); if (room.snapshot) this.emit(socket, "game:state", room.snapshot); }
   private broadcastRoom(room: Room) { for (const socket of this.ctx.getWebSockets()) this.emitState(socket, room); }
   private broadcast(event: string, payload: unknown) { for (const socket of this.ctx.getWebSockets()) this.emit(socket, event, payload); }
   private emit(socket: WebSocket, event: string, payload?: unknown) { if (socket.readyState === 1) socket.send(JSON.stringify({ event, payload })); }

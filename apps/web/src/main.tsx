@@ -10,16 +10,23 @@ import "./styles.css";
 const api = import.meta.env.VITE_API_BASE ?? "http://localhost:4000";
 const SESSION_KEY = "monopoly.session";
 
+/**
+ * Sessions live in sessionStorage, not localStorage, so each tab is its own
+ * player. A shared localStorage entry meant a second tab silently adopted the
+ * first tab's identity, and leaving in one tab pulled the session out from
+ * under the others. sessionStorage still survives a reload.
+ */
 function readStoredSession(): GuestSession | null {
+  localStorage.removeItem(SESSION_KEY);
   try {
-    const value = JSON.parse(localStorage.getItem(SESSION_KEY) ?? "null") as Partial<GuestSession> | null;
+    const value = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? "null") as Partial<GuestSession> | null;
     if (value && typeof value.roomCode === "string" && typeof value.playerId === "string" && typeof value.sessionToken === "string") {
       return { roomCode: value.roomCode, playerId: value.playerId, sessionToken: value.sessionToken };
     }
   } catch {
     // Invalid local state is discarded below.
   }
-  localStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
   return null;
 }
 
@@ -34,6 +41,7 @@ function App() {
   const [presentationEvents, setPresentationEvents] = useState<GamePresentationEvent[]>([]);
   const eventSequence = useRef(0);
   const presentationSequence = useRef(0);
+  const [clockOffset, setClockOffset] = useState(0);
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("disconnected");
   const socket = useRef<GameSocket | null>(null);
 
@@ -53,7 +61,13 @@ function App() {
       setConnection("disconnected");
       setError(typeof payload === "string" ? payload : "Unable to connect to the game server");
     });
-    client.on("room:state", (payload) => setRoom(payload as RoomState));
+    client.on("room:state", (payload) => {
+      const state = payload as RoomState;
+      // Deadlines are absolute server timestamps, so a skewed client clock would
+      // otherwise show a wrong — possibly negative — countdown.
+      if (typeof state.serverTime === "number") setClockOffset(state.serverTime - Date.now());
+      setRoom(state);
+    });
     client.on("game:state", (payload) => {
       const snapshot = payload as GameSnapshot;
       setGame((previous) => {
@@ -94,7 +108,7 @@ function App() {
       const message = typeof problem?.message === "string" ? problem.message : "Unable to connect to the room";
       setError(message);
       if (problem?.code === "AUTH_FAILED" || problem?.code === "ROOM_NOT_FOUND") {
-        localStorage.removeItem(SESSION_KEY);
+        sessionStorage.removeItem(SESSION_KEY);
         setRoom(null);
         setGame(null);
         setSession(null);
@@ -107,7 +121,7 @@ function App() {
   }, [session]);
 
   const useSession = (next: GuestSession) => {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(next));
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
     setError("");
     setRoom(null);
     setGame(null);
@@ -118,7 +132,7 @@ function App() {
 
   const leaveRoom = () => {
     socket.current?.disconnect();
-    localStorage.removeItem(SESSION_KEY);
+    sessionStorage.removeItem(SESSION_KEY);
     setSession(null);
     setRoom(null);
     setGame(null);
@@ -162,7 +176,7 @@ function App() {
 
   if (!game) return <main className="entry-shell"><section className="entry-card"><h1>Monopoly</h1><p>Synchronizing game state…</p><button onClick={leaveRoom}>Leave room</button></section></main>;
   if (game.phase === "lobby") return <LobbyView room={room} game={game} playerId={session.playerId} connection={connection} error={error} send={send} leaveRoom={leaveRoom} />;
-  return <GameView room={room} game={game} playerId={session.playerId} connection={connection} error={error} events={events} presentationEvents={presentationEvents} onPresentationComplete={onPresentationComplete} send={send} leaveRoom={leaveRoom} />;
+  return <GameView room={room} game={game} playerId={session.playerId} connection={connection} error={error} events={events} presentationEvents={presentationEvents} onPresentationComplete={onPresentationComplete} clockOffset={clockOffset} send={send} leaveRoom={leaveRoom} />;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

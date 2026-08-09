@@ -1,18 +1,7 @@
 import type { WireMessage } from "@monopoly/shared-types";
 
-function isLocalOrigin(origin: string): boolean {
-  try {
-    const url = new URL(origin);
-    return url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]");
-  } catch {
-    return false;
-  }
-}
-
-export function isAllowedOrigin(origin: string, configuredOrigin: string): boolean {
-  if (origin === configuredOrigin) return true;
-  return isLocalOrigin(configuredOrigin) && isLocalOrigin(origin);
-}
+// Both transports share one origin check; see @monopoly/shared-types.
+export { isAllowedOrigin } from "@monopoly/shared-types";
 
 export function parseWireMessage(raw: string | ArrayBuffer): WireMessage | null {
   try {
