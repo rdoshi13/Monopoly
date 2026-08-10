@@ -59,22 +59,31 @@ function TradePanel({ game, playerId, send, interactionLocked }: { game: GameSna
   const toggle = (values: number[], position: number) => values.includes(position) ? values.filter((value) => value !== position) : [...values, position];
   const summary = (offer: TradeOffer) => `${game.players.find((player) => player.id === offer.from)?.username ?? "Player"} offers £${offer.offeredCash}${offer.offeredPositions.length ? ` and ${offer.offeredPositions.map(propertyName).join(", ")}` : ""} for £${offer.requestedCash}${offer.requestedPositions.length ? ` and ${offer.requestedPositions.map(propertyName).join(", ")}` : ""}.`;
 
+  const incomingTrade = game.pendingTrade && game.pendingTrade.to === playerId ? game.pendingTrade : null;
   const closeComposer = useCallback(() => setComposerOpen(false), []);
   useEffect(() => { if (!canPropose) setComposerOpen(false); }, [canPropose]);
 
   return <section className="panel trade-panel">
     <h3>Trades</h3>
-    {/* A pending offer needs a decision, so it stays inline rather than behind a button. */}
     {game.pendingTrade ? <>
       <p>{summary(game.pendingTrade)}</p>
-      <div className="actions">
-        {game.pendingTrade.to === playerId && <><button onClick={() => send({ type: "trade-accept" })}>Accept trade</button><button className="secondary" onClick={() => send({ type: "trade-reject" })}>Reject</button></>}
-        {game.pendingTrade.from === playerId && <button className="secondary" onClick={() => send({ type: "trade-cancel" })}>Cancel offer</button>}
-      </div>
+      {game.pendingTrade.from === playerId && <div className="actions"><button className="secondary" onClick={() => send({ type: "trade-cancel" })}>Cancel offer</button></div>}
+      {game.pendingTrade.to === playerId && <p className="muted">Waiting for your decision.</p>}
     </> : <>
       <button className="primary" disabled={!canPropose} onClick={() => setComposerOpen(true)}>Propose trade</button>
       {!canPropose && <p className="muted">{game.selectedMode.AllowDeals ? "Trades can be proposed at the start of your turn." : "Trades are disabled in this mode."}</p>}
     </>}
+    {incomingTrade && <div className="modal-overlay trade-offer-overlay">
+      <section className="trade-dialog trade-offer" role="alertdialog" aria-modal="true" aria-labelledby="trade-offer-title">
+        <span className="eyebrow">Trade offer</span>
+        <h2 id="trade-offer-title">{game.players.find((player) => player.id === incomingTrade.from)?.username ?? "A player"} wants to trade</h2>
+        <div className="trade-offer-columns">
+          <div><h3>You receive</h3><ul>{incomingTrade.offeredCash > 0 && <li>£{incomingTrade.offeredCash}</li>}{incomingTrade.offeredPositions.map((position) => <li key={position}>{propertyName(position)}</li>)}{!incomingTrade.offeredCash && !incomingTrade.offeredPositions.length && <li className="muted">Nothing</li>}</ul></div>
+          <div><h3>You give</h3><ul>{incomingTrade.requestedCash > 0 && <li>£{incomingTrade.requestedCash}</li>}{incomingTrade.requestedPositions.map((position) => <li key={position}>{propertyName(position)}</li>)}{!incomingTrade.requestedCash && !incomingTrade.requestedPositions.length && <li className="muted">Nothing</li>}</ul></div>
+        </div>
+        <div className="actions"><button className="primary" onClick={() => send({ type: "trade-accept" })}>Accept trade</button><button className="secondary" onClick={() => send({ type: "trade-reject" })}>Reject</button></div>
+      </section>
+    </div>}
     {composerOpen && canPropose && <div className="modal-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) closeComposer(); }}>
       <section className="trade-dialog" role="dialog" aria-modal="true" aria-labelledby="trade-dialog-title">
         <button className="deed-close" type="button" onClick={closeComposer} aria-label="Close trade composer">×</button>
@@ -94,6 +103,9 @@ export function GameView({ room, game, playerId, connection, error, events, pres
   const [highlightedPlayerId, setHighlightedPlayerId] = useState<string | null>(null);
   const [selectedPropertyPosition, setSelectedPropertyPosition] = useState<number | null>(null);
   const [dismissedLanding, setDismissedLanding] = useState<string | null>(null);
+  const [moneyDeltas, setMoneyDeltas] = useState<Array<{ id: number; playerId: string; amount: number }>>([]);
+  const previousBalances = useRef<Record<string, number> | null>(null);
+  const deltaSequence = useRef(0);
   const [rollPresentation, setRollPresentation] = useState<RollPresentation | null>(null);
   const [cardPresentation, setCardPresentation] = useState<CardPresentation | null>(null);
   const [lastDiceResult, setLastDiceResult] = useState<DiceResult | null>(null);
@@ -107,6 +119,21 @@ export function GameView({ room, game, playerId, connection, error, events, pres
       highlightTimer.current = null;
     }, 3000);
   }, []);
+  useEffect(() => {
+    const current: Record<string, number> = {};
+    const fresh: Array<{ id: number; playerId: string; amount: number }> = [];
+    for (const player of game.players) {
+      current[player.id] = player.balance;
+      const before = previousBalances.current?.[player.id];
+      if (before !== undefined && before !== player.balance) fresh.push({ id: deltaSequence.current++, playerId: player.id, amount: player.balance - before });
+    }
+    previousBalances.current = current;
+    if (!fresh.length) return;
+    setMoneyDeltas((existing) => [...existing, ...fresh]);
+    const ids = new Set(fresh.map((delta) => delta.id));
+    const timer = window.setTimeout(() => setMoneyDeltas((existing) => existing.filter((delta) => !ids.has(delta.id))), 1600);
+    return () => window.clearTimeout(timer);
+  }, [game.players]);
   useEffect(() => { if (!room.turnDeadline) return; const timer = setInterval(() => tick((value) => value + 1), 1000); return () => clearInterval(timer); }, [room.turnDeadline]);
   useEffect(() => () => { if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current); }, []);
   const activePresentationEvent = presentationEvents[0] ?? null;
@@ -250,7 +277,7 @@ export function GameView({ room, game, playerId, connection, error, events, pres
           {!presentationBusy && myTurn && game.phase === "awaiting-roll" && <div className="actions">{me?.isInJail && <><button onClick={() => send({ type: "unjail", option: "pay" })}>Pay £50</button>{me.getoutCards > 0 && <button onClick={() => send({ type: "unjail", option: "card" })}>Use jail card</button>}</>}<button className="primary" onClick={() => send({ type: "roll" })}>Roll dice</button></div>}
           {game.phase === "awaiting-auction" && game.pendingAuction && <><p>Highest bid: <strong>£{game.pendingAuction.highestBid}</strong>{game.pendingAuction.highestBidderId ? ` by ${game.players.find((player) => player.id === game.pendingAuction?.highestBidderId)?.username ?? "player"}` : ""}</p>{passedAuction ? <p className="muted">You passed. Waiting for the remaining bidders.</p> : <div className="actions"><input aria-label="Auction bid" type="number" min={game.pendingAuction.highestBid + 1} max={me?.balance} value={auctionBid} onChange={(event) => setAuctionBid(Math.max(1, Math.floor(Number(event.target.value) || 1)))} /><button className="primary" onClick={() => send({ type: "auction-bid", amount: auctionBid })}>Bid</button><button className="secondary" onClick={() => send({ type: "auction-pass" })}>Pass</button></div>}</>}
         </section>
-        <section className="panel"><h3>Players</h3><div className="players">{playersWithConnection.map((player) => <button type="button" className={`player-card player-card-button ${player.id === game.currentPlayerId ? "active" : ""}${player.id === highlightedPlayerId ? " selected" : ""}`} style={{ "--player-color": playerColor(player.icon) } as React.CSSProperties} aria-label={`Highlight ${player.username} on the board for 3 seconds`} aria-pressed={player.id === highlightedPlayerId} onClick={() => highlightPlayer(player.id)} key={player.id}><span className={`token token-${player.icon}`}><img src={playerTokens[player.icon] ?? playerTokens[0]} alt="" /></span><span><strong>{player.username}{player.id === playerId ? " (you)" : ""}</strong><small>£{player.balance} · {propertyName(player.position)}{player.isInJail ? " · Jail" : ""}</small></span><i className={player.connected ? "online" : "offline"} /></button>)}</div></section>
+        <section className="panel"><h3>Players</h3><div className="players">{playersWithConnection.map((player) => <button type="button" className={`player-card player-card-button ${player.id === game.currentPlayerId ? "active" : ""}${player.id === highlightedPlayerId ? " selected" : ""}`} style={{ "--player-color": playerColor(player.icon) } as React.CSSProperties} aria-label={`Highlight ${player.username} on the board for 3 seconds`} aria-pressed={player.id === highlightedPlayerId} onClick={() => highlightPlayer(player.id)} key={player.id}><span className={`token token-${player.icon}`}><img src={playerTokens[player.icon] ?? playerTokens[0]} alt="" /></span><span><strong>{player.username}{player.id === playerId ? " (you)" : ""}</strong><small>£{player.balance} · {propertyName(player.position)}{player.isInJail ? " · Jail" : ""}</small></span><i className={player.connected ? "online" : "offline"} />{moneyDeltas.filter((delta) => delta.playerId === player.id).map((delta) => <span className={`money-delta ${delta.amount > 0 ? "gain" : "loss"}`} key={delta.id} aria-hidden="true">{delta.amount > 0 ? "+" : "−"}£{Math.abs(delta.amount)}</span>)}</button>)}</div></section>
         <section className="panel"><h3>Your properties</h3>{me?.properties.length ? <ul className="property-list">{me.properties.map((property) => <li key={property.posistion}><span><strong>{propertyName(property.posistion)}</strong><small>{property.count === "h" ? "Hotel" : `${property.count} houses`}{property.mortgaged ? " · Mortgaged" : ""}</small></span>{!presentationBusy && myTurn && game.phase === "awaiting-roll" && <span className="mini-actions">{isStreetGroup(property.group) && <><button onClick={() => send({ type: "build", position: property.posistion })}>Build</button>{property.count !== 0 && <button onClick={() => send({ type: "sell-building", position: property.posistion })}>Sell</button>}</>}<button onClick={() => send({ type: property.mortgaged ? "unmortgage" : "mortgage", position: property.posistion })}>{property.mortgaged ? "Redeem" : "Mortgage"}</button></span>}</li>)}</ul> : <p className="muted">No properties yet.</p>}<small className="muted">Bank: {game.bankSupply.houses} houses · {game.bankSupply.hotels} hotels</small></section>
         <TradePanel game={game} playerId={playerId} send={send} interactionLocked={presentationBusy} />
         <section className="panel events"><h3>Game events</h3>{events.length ? <ol>{events.map((event) => <li key={event.id}>{event.playerId ? `${game.players.find((player) => player.id === event.playerId)?.username ?? "A player"} ${event.text}` : event.text}</li>)}</ol> : <p className="muted">Rolls, cards and payments will appear here.</p>}</section>

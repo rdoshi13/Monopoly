@@ -53,6 +53,18 @@ pnpm build
 
 ### 2026-08-10 — Claude
 
+- Fixed: A card draw logged three lines. `main.tsx` recorded "drew <title>" from `game:card` while the engine emitted the identical sentence as a history line, and the payment reused the card title verbatim, giving "paid £100 for Hospital fees; pay £100". The client no longer records the draw, and `cardReason` keeps only the clause before the instruction.
+- Added: Balance changes float off the owning player card, green for a gain and red for a loss. Derived by diffing balances between snapshots rather than adding a protocol event, so it covers rent, tax, cards, Go and purchases alike.
+- Changed: An incoming trade offer is a centred alert dialog with You receive / You give columns and a pulsing border. It previously sat in the sidebar where it was easy to miss. The proposer keeps an inline summary and Cancel.
+- Changed: Accepting a trade logs what actually moved — "Alice gave £150 to Bob for nothing" — instead of "Alice traded with Bob".
+- Fixed: The two decks are the same size again and mirror each other about the board centre. Both are 96px wide with `aspect-ratio: 1.35`, but the taller Chance artwork overflowed and grew its box to 111px against Community Chest's 71px, which also pushed its centre off. `min-height: 0` plus `overflow: hidden` keeps the ratio authoritative, and the artwork is sized as a percentage of the box rather than by `max-*`.
+- Added: Each deck renders a small stack of card backs, and a drawn card flips out of its own pile to the centre and slides back onto the pile when dismissed. `GameCard` measures the `[data-deck]` element and holds the unmount for the return animation.
+- Changed: Player tokens are 2.4rem with a player-coloured ring and a drop shadow, up from a 1.45rem plain circle.
+- Files: `packages/game-engine/src/engine.ts`, `apps/web/src/GameView.tsx`, `apps/web/src/GameCard.tsx`, `apps/web/src/CodedBoard.tsx`, `apps/web/src/main.tsx`, and `apps/web/src/styles.css`.
+- Validation: Type-check, 34 engine + 6 Node + 2 Worker tests, and a live two-player game. Measured decks at 96x71 with centres at (31.1, 28.8) and (68.9, 71.2); the same Hospital fees card that produced the original triple entry now logs two correct lines; the flip origin resolved to the pile centre within a pixel; and accepting a trade showed -£150 and +£150 on the two cards.
+
+### 2026-08-10 — Claude
+
 - Fixed: The deed modal no longer blurs the page behind it, and its scrim was lightened from .68 to .34. The sidebar carries your balance and property list, which you need while deciding whether to buy. The deed also shows your balance directly above Buy/Auction.
 - Fixed: Players who are not the one deciding can dismiss the landing deed and see the board. It was locked for everyone. Dismissal is keyed to the specific landing, so the next one reopens it; the acting player still cannot dismiss, because Buy/Auction is their only route to a decision.
 - Fixed: Deed titles are readable on every group. The header was white text on the group colour, which failed on Yellow and Light Blue. Ink is now chosen from the colour's relative luminance, and `groupColors` moved to `boardColors.ts` so the board and the deed cannot drift.

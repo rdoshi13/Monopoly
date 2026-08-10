@@ -29,7 +29,7 @@ input, select { width: 100%; border: 1px solid #c8d3cc; border-radius: 10px; pad
 .connection.connected { background: #dff3e5; color: #26653b; }
 .connection.disconnected { background: #ffe5df; color: #8b3528; }
 .players { display: grid; gap: .55rem; }
-.player-card { display: flex; align-items: center; gap: .7rem; min-width: 0; padding: .65rem; border: 1px solid #d8e0db; border-left: 4px solid var(--player-color, #d8e0db); border-radius: 12px; background: #fff; }
+.player-card { position: relative; display: flex; align-items: center; gap: .7rem; min-width: 0; padding: .65rem; border: 1px solid #d8e0db; border-left: 4px solid var(--player-color, #d8e0db); border-radius: 12px; background: #fff; }
 .player-card.active { border-color: #c93636; border-left-color: var(--player-color, #c93636); box-shadow: inset 3px 0 #c93636; }
 .player-card.selected { outline: 2px solid var(--player-color); outline-offset: 2px; }
 .player-card-button { width: 100%; color: inherit; text-align: left; }
@@ -46,8 +46,8 @@ input, select { width: 100%; border: 1px solid #c8d3cc; border-radius: 10px; pad
 .game-header h1 { margin: 0; font-family: Georgia, serif; font-size: 2.3rem; }
 .status { display: flex; gap: .7rem; align-items: center; }
 .game-layout { max-width: 1720px; margin: auto; display: grid; grid-template-columns: minmax(760px, 1fr) 340px; gap: 1rem; align-items: start; }
-.token { flex: 0 0 auto; width: 1.45rem; height: 1.45rem; display: inline-grid; place-items: center; border: 2px solid white; border-radius: 50%; background: #f6f8f6; color: white; font-size: .7rem; font-weight: 900; box-shadow: 0 1px 4px #50605766; overflow: hidden; }
-.token img { width: 100%; height: 100%; object-fit: contain; }
+.token { flex: 0 0 auto; width: 2.4rem; height: 2.4rem; display: inline-grid; place-items: center; border: 2px solid white; border-radius: 50%; background: #f6f8f6; color: white; font-size: .7rem; font-weight: 900; outline: 2.5px solid var(--player-color, #6d7a72); outline-offset: 1px; box-shadow: 0 2px 8px rgba(30,45,36,.28); overflow: hidden; }
+.token img { width: 84%; height: 84%; object-fit: contain; filter: drop-shadow(0 1px 1px rgba(0,0,0,.3)); }
 .token-0 { background: #d43f3f; }.token-1 { background: #315dc4; }.token-2 { background: #2c9763; }.token-3 { background: #d18a22; }.token-4 { background: #7442a5; }.token-5 { background: #292d32; }
 /* The board is square, so capping its width also caps its height. Without this
    it fills the grid column and runs past the fold on a 720p screen.
@@ -111,8 +111,17 @@ button.coded-space.purchasable:focus-visible { z-index: 5; outline: 3px solid #c
 .board-logo { position: absolute; left: 50%; top: 50%; display: grid; justify-items: center; transform: translate(-50%, -50%) rotate(-45deg); white-space: nowrap; }
 .board-logo span { margin-bottom: .25rem; font-size: clamp(.38rem, 1.45cqi, .8rem); font-weight: 700; }
 .board-logo strong { padding: .08em .22em .02em; border: clamp(2px, 0.56cqi, 5px) solid #141816; background: #e52b32; color: white; font-family: Arial Black, sans-serif; font-size: clamp(1.2rem, 8.36cqi, 4.8rem); letter-spacing: -.07em; line-height: 1; text-shadow: 0 .04em #202420; box-shadow: 0 .07em 0 #fff, 0 .12em 0 #151a17; }
-.board-deck { position: absolute; width: 24%; aspect-ratio: 1.35; display: grid; place-items: center; border: 2px dashed rgba(20,31,24,.45); transform: rotate(-45deg); font-size: clamp(.3rem, 1.05cqi, .6rem); font-weight: 700; text-transform: uppercase; }
-.board-deck img { max-width: 52%; max-height: 58%; object-fit: contain; }
+/* min-height/overflow keep aspect-ratio authoritative: without them the taller
+   Chance artwork grew its box to 111px against Community Chest's 71px. */
+.board-deck { position: absolute; width: 24%; aspect-ratio: 1.35; min-height: 0; overflow: hidden; display: grid; place-items: center; align-content: center; gap: 4%; border: 2px dashed rgba(20,31,24,.45); transform: rotate(-45deg); font-size: clamp(.3rem, 1.05cqi, .6rem); font-weight: 700; text-transform: uppercase; }
+.board-deck img { position: relative; z-index: 1; width: 46%; height: 44%; object-fit: contain; }
+.board-deck > span:last-child { position: relative; z-index: 1; }
+/* A small stack so the decks read as piles of cards rather than empty outlines. */
+.deck-pile { position: absolute; inset: 12% 16%; z-index: 0; }
+.deck-pile i { position: absolute; inset: 0; border: 1px solid rgba(20,31,24,.5); border-radius: 3px; background: #fdfcf6; box-shadow: 0 1px 2px rgba(20,31,24,.18); }
+.deck-pile i:nth-child(1) { transform: translate(-4%, -6%) rotate(-3deg); }
+.deck-pile i:nth-child(2) { transform: translate(2%, 1%) rotate(2deg); }
+.deck-pile i:nth-child(3) { transform: none; }
 .community-deck { left: 12%; top: 12%; background: rgba(99,197,229,.2); }
 .chance-deck { right: 12%; bottom: 12%; background: rgba(244,158,54,.2); }
 .board-token-layer { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
@@ -171,7 +180,7 @@ button.coded-space.purchasable:focus-visible { z-index: 5; outline: 3px solid #c
 .trade-dialog .actions { margin-top: 1rem; }
 .trade-dialog .actions button { flex: 1; }
 .trade-panel > button { width: 100%; }
-.game-card { position: relative; width: min(520px, calc(100vw - 2rem)); padding: 1.4rem; border: 3px solid #171d19; background: #fff; color: #151a17; text-align: center; box-shadow: 0 24px 70px rgba(0,0,0,.38); }
+.game-card { animation: card-draw 460ms cubic-bezier(.22,.9,.3,1) both; transform-origin: center; position: relative; width: min(520px, calc(100vw - 2rem)); padding: 1.4rem; border: 3px solid #171d19; background: #fff; color: #151a17; text-align: center; box-shadow: 0 24px 70px rgba(0,0,0,.38); }
 .game-card.chance { border-color: #e58422; background: #fff9f0; }
 .game-card.community { border-color: #2399bd; background: #f1fbfe; }
 .game-card-player { display: block; margin-bottom: .4rem; color: #67736b; font-size: .78rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
@@ -180,6 +189,27 @@ button.coded-space.purchasable:focus-visible { z-index: 5; outline: 3px solid #c
 .game-card h2 { margin: .3rem 0 .8rem; font-family: Georgia, serif; font-size: 2.15rem; }
 .game-card p { margin: 0 auto 1.2rem; max-width: 42ch; font-size: 1.12rem; line-height: 1.45; }
 .game-card-continue { min-width: 9rem; }
+.game-card.returning { animation: card-return 420ms ease-in both; }
+.modal-overlay.card-returning { background: rgba(15,23,18,0); transition: background 420ms ease-in; }
+@keyframes card-draw { from { opacity: .2; transform: translate(var(--card-from-x, 0), var(--card-from-y, 0)) scale(.16) rotateY(90deg); } }
+@keyframes card-return { to { opacity: .1; transform: translate(var(--card-from-x, 0), var(--card-from-y, 0)) scale(.16) rotateY(-90deg); } }
+
+/* 8: balance changes float off the player card they belong to. */
+.money-delta { position: absolute; right: .7rem; top: .3rem; font-size: 1rem; font-weight: 900; pointer-events: none; animation: money-float 1600ms ease-out both; }
+.money-delta.gain { color: #1d7f45; }
+.money-delta.loss { color: #b3312b; }
+@keyframes money-float { 0% { opacity: 0; transform: translateY(.5rem); } 15% { opacity: 1; transform: translateY(0); } 70% { opacity: 1; transform: translateY(-.7rem); } 100% { opacity: 0; transform: translateY(-1.5rem); } }
+
+/* 9: an offer aimed at you is easy to miss in a sidebar. */
+.trade-offer-overlay { background: rgba(15,23,18,.52); }
+.trade-offer { border: 3px solid #c93636; animation: trade-offer-in 320ms ease-out both, trade-offer-pulse 1.8s ease-in-out 320ms 3; }
+.trade-offer h2 { margin: .15rem 0 1rem; }
+.trade-offer-columns { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
+.trade-offer-columns > div { padding: .8rem; border: 1px solid #dde4df; border-radius: 12px; background: #f7faf8; }
+.trade-offer-columns h3 { margin: 0 0 .5rem; font-size: .74rem; letter-spacing: .1em; text-transform: uppercase; color: #65736a; }
+.trade-offer-columns ul { margin: 0; padding-left: 1.05rem; display: grid; gap: .25rem; }
+@keyframes trade-offer-in { from { opacity: 0; transform: scale(.9); } }
+@keyframes trade-offer-pulse { 50% { box-shadow: 0 0 0 .55rem rgba(201,54,54,.22), 0 24px 70px rgba(0,0,0,.34); } }
 .sidebar { display: grid; gap: .8rem; max-height: calc(100vh - 100px); overflow: auto; padding-right: .2rem; }
 .panel { padding: 1rem; border: 1px solid #d6dfd9; border-radius: 16px; background: rgba(255,255,255,.94); box-shadow: 0 8px 24px rgba(35,60,43,.06); }
 .panel h2, .panel h3 { margin: .2rem 0 .8rem; }

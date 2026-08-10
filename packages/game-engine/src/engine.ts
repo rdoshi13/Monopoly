@@ -176,6 +176,15 @@ function buildingLevel(property: PlayerProperty): number {
     return property.count === "h" ? 5 : property.count;
 }
 
+/**
+ * Card titles carry their own instruction ("Hospital fees; pay £100"), so using
+ * one verbatim as a payment reason reads "paid £100 for Hospital fees; pay £100".
+ * Keep the clause before the instruction.
+ */
+function cardReason(card: Card): string {
+    return card.title.split(/[;:]/)[0].trim();
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -709,7 +718,11 @@ export class GameEngine {
         this.players.set(nextFrom.id, nextFrom);
         this.players.set(nextTo.id, nextTo);
         this.pendingTrade = null;
-        this.history(`${from.username} traded with ${to.username}`);
+        const describe = (cash: number, positions: number[]) => {
+            const parts = [...(cash > 0 ? [`£${cash}`] : []), ...positions.map((position) => String(propertyByPosition.get(position)?.name ?? `space ${position}`))];
+            return parts.length ? parts.join(" and ") : "nothing";
+        };
+        this.history(`${from.username} gave ${describe(offer.offeredCash, offer.offeredPositions)} to ${to.username} for ${describe(offer.requestedCash, offer.requestedPositions)}`);
         this.publish();
         return true;
     }
@@ -768,8 +781,8 @@ export class GameEngine {
         else deckState.discard.push(cardIndex);
         switch (card.action) {
             case "addfunds": player.balance += card.amount ?? 0; break;
-            case "removefunds": this.chargeBank(player, card.amount ?? 0, card.title); break;
-            case "propertycharges": this.chargeBank(player, this.propertyCharge(player, card), card.title); break;
+            case "removefunds": this.chargeBank(player, card.amount ?? 0, cardReason(card)); break;
+            case "propertycharges": this.chargeBank(player, this.propertyCharge(player, card), cardReason(card)); break;
             case "jail":
                 if (card.subaction === "getout") player.getoutCards += 1;
                 else this.sendToJail(player);

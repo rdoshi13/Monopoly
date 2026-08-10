@@ -92,8 +92,8 @@ function App() {
       const event = payload as { playerId?: unknown; deck?: unknown; card?: Partial<Card>; fromPosition?: unknown; position?: unknown; moved?: unknown; fromJail?: unknown; toJail?: unknown };
       if (typeof event.playerId === "string" && (event.deck === "chance" || event.deck === "communitychest") && typeof event.card?.title === "string" && typeof event.card.action === "string" && Number.isInteger(event.fromPosition) && Number(event.fromPosition) >= 0 && Number(event.fromPosition) < 40 && Number.isInteger(event.position) && Number(event.position) >= 0 && Number(event.position) < 40 && typeof event.moved === "boolean" && typeof event.fromJail === "boolean" && typeof event.toJail === "boolean") {
         const result: CardResult = { id: presentationSequence.current++, playerId: event.playerId, deck: event.deck, card: event.card as Card, fromPosition: Number(event.fromPosition), position: Number(event.position), moved: event.moved, fromJail: event.fromJail, toJail: event.toJail };
+        // No record() here: the engine's history line already reports the draw.
         setPresentationEvents((current) => [...current, { kind: "card", result }]);
-        record(`drew ${event.card.title}`, result.playerId);
       }
     });
     client.on("game:history", (payload) => {

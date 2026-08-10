@@ -200,9 +200,9 @@ export function CodedBoard({ game, highlightedPlayerId, animatedToken, onSelectP
     <div className="coded-board">
       {boardSpaces.map((space) => <BoardSpaceCell space={space} game={game} onSelectProperty={onSelectProperty} playerColor={playerColor} key={space.posistion} />)}
       <section className="board-center" aria-hidden="true">
-        <div className="board-deck community-deck"><img src={artwork.chest} alt="" /><span>Community Chest</span></div>
+        <div className="board-deck community-deck" data-deck="communitychest"><span className="deck-pile" aria-hidden="true"><i /><i /><i /></span><img src={artwork.chest} alt="" /><span>Community Chest</span></div>
         <div className="board-logo"><span>Property trading game</span><strong>MONOPOLY</strong></div>
-        <div className="board-deck chance-deck"><img src={artwork.chance} alt="" /><span>Chance</span></div>
+        <div className="board-deck chance-deck" data-deck="chance"><span className="deck-pile" aria-hidden="true"><i /><i /><i /></span><img src={artwork.chance} alt="" /><span>Chance</span></div>
       </section>
       <div className="board-token-layer" aria-label="Player locations">
         {game.players.map((player) => {
