@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { BoardSpace } from "@monopoly/game-engine";
 import { artwork } from "./assets";
+import { groupColors, inkOn } from "./boardColors";
 
 interface PropertyCardModalProps {
   space: BoardSpace;
@@ -9,19 +10,10 @@ interface PropertyCardModalProps {
   development?: number | "h";
   sourcePosition?: number;
   onClose?: () => void;
+  /** Shown beside Buy/Auction so the decision does not require looking away. */
+  balance?: number;
   actions?: { onBuy: () => void; onAuction: () => void };
 }
-
-const groupColors: Record<string, string> = {
-  Brown: "#955436",
-  "Light Blue": "#aae0fa",
-  Pink: "#d93a96",
-  Orange: "#f7941d",
-  Red: "#ed1b24",
-  Yellow: "#fef200",
-  Green: "#1fb25a",
-  "Dark Blue": "#0072bb",
-};
 
 function MoneyRow({ label, amount }: { label: string; amount: number }) {
   return <li><span>{label}</span><strong>£{amount}</strong></li>;
@@ -30,7 +22,7 @@ function MoneyRow({ label, amount }: { label: string; amount: number }) {
 function StreetDetails({ space }: { space: BoardSpace }) {
   const rents = space.multpliedrent ?? [];
   return <>
-    <header className="deed-card-header" style={{ "--deed-color": groupColors[space.group] ?? "#777" } as React.CSSProperties}>
+    <header className="deed-card-header" style={{ "--deed-color": groupColors[space.group] ?? "#777", "--deed-ink": inkOn(groupColors[space.group] ?? "#777") } as React.CSSProperties}>
       <span>Title deed</span>
       <h2 id="property-card-title">{space.name}</h2>
     </header>
@@ -77,7 +69,7 @@ function UtilityDetails({ space }: { space: BoardSpace }) {
   </>;
 }
 
-export function PropertyCardModal({ space, ownerName, mortgaged = false, development = 0, sourcePosition, onClose, actions }: PropertyCardModalProps) {
+export function PropertyCardModal({ space, ownerName, mortgaged = false, development = 0, sourcePosition, onClose, balance, actions }: PropertyCardModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const buyButtonRef = useRef<HTMLButtonElement>(null);
   const cardRef = useRef<HTMLElement>(null);
@@ -108,7 +100,7 @@ export function PropertyCardModal({ space, ownerName, mortgaged = false, develop
   const isUtility = space.group === "Utilities";
   const developmentLabel = development === "h" ? "Hotel" : development > 0 ? `${development} house${development === 1 ? "" : "s"}` : undefined;
 
-  return <div className={`property-modal${sourcePosition !== undefined ? " landing-property-modal" : ""}`} onMouseDown={(event) => { if (onClose && event.target === event.currentTarget) onClose(); }}>
+  return <div className={`modal-overlay${sourcePosition !== undefined ? " landing-property-modal" : ""}`} onMouseDown={(event) => { if (onClose && event.target === event.currentTarget) onClose(); }}>
     <section className={`deed-card${sourcePosition !== undefined ? " landing-deed-card" : ""}`} role="dialog" aria-modal="true" aria-labelledby="property-card-title" aria-describedby="property-card-status" tabIndex={-1} ref={cardRef}>
       {onClose && <button className="deed-close" type="button" onClick={onClose} aria-label="Close property card" ref={closeButtonRef}>×</button>}
       {isRailroad ? <RailroadDetails space={space} /> : isUtility ? <UtilityDetails space={space} /> : <StreetDetails space={space} />}
@@ -117,7 +109,7 @@ export function PropertyCardModal({ space, ownerName, mortgaged = false, develop
         <span>Mortgage value <strong>£{Math.floor((space.price ?? 0) / 2)}</strong></span>
       </div>
       <footer className="deed-price"><span>Purchase price</span><strong>£{space.price ?? 0}</strong></footer>
-      {actions && <div className="deed-actions"><button className="primary" type="button" onClick={actions.onBuy} ref={buyButtonRef}>Buy</button><button className="secondary" type="button" onClick={actions.onAuction}>Auction</button></div>}
+      {actions && <div className="deed-actions">{balance !== undefined && <span className="deed-balance">Your balance <strong>£{balance}</strong></span>}<div className="deed-action-buttons"><button className="primary" type="button" onClick={actions.onBuy} ref={buyButtonRef}>Buy</button><button className="secondary" type="button" onClick={actions.onAuction}>Auction</button></div></div>}
     </section>
   </div>;
 }

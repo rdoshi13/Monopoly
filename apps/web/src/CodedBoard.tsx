@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { boardSpaces, type BoardSpace, type GameSnapshot } from "@monopoly/game-engine";
 import { artwork, playerTokens } from "./assets";
+import { groupColors } from "./boardColors";
 
 interface CodedBoardProps {
   game: GameSnapshot;
@@ -10,17 +11,6 @@ interface CodedBoardProps {
   playerColor: (icon: number) => string;
   propertyName: (position: number) => string;
 }
-
-const groupColors: Record<string, string> = {
-  Brown: "#955436",
-  "Light Blue": "#aae0fa",
-  Pink: "#d93a96",
-  Orange: "#f7941d",
-  Red: "#ed1b24",
-  Yellow: "#fef200",
-  Green: "#1fb25a",
-  "Dark Blue": "#0072bb",
-};
 
 /**
  * Break points for the words that cannot fit a board cell on one line. These are

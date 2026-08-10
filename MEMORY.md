@@ -51,6 +51,18 @@ pnpm build
 
 <!-- Newest first. Record meaningful features, fixes, migrations, refactors, or dependency changes. -->
 
+### 2026-08-10 — Claude
+
+- Fixed: The deed modal no longer blurs the page behind it, and its scrim was lightened from .68 to .34. The sidebar carries your balance and property list, which you need while deciding whether to buy. The deed also shows your balance directly above Buy/Auction.
+- Fixed: Players who are not the one deciding can dismiss the landing deed and see the board. It was locked for everyone. Dismissal is keyed to the specific landing, so the next one reopens it; the acting player still cannot dismiss, because Buy/Auction is their only route to a decision.
+- Fixed: Deed titles are readable on every group. The header was white text on the group colour, which failed on Yellow and Light Blue. Ink is now chosen from the colour's relative luminance, and `groupColors` moved to `boardColors.ts` so the board and the deed cannot drift.
+- Fixed: Build and Sell no longer appear for stations and utilities. The engine always rejected those, so offering them produced a guaranteed error — this and the sticky error below were the same defect from two directions.
+- Fixed: Rejections are a self-dismissing toast rather than an inline block that persisted until another replaced it and reflowed the panels. `main.tsx` bumps an `errorNonce` that keys the toast, so an identical repeat still re-arms the timer.
+- Changed: The trade form is behind a "Propose trade" button and opens in a modal; the sidebar was permanently occupied by a cramped form. A pending offer still renders inline, since it needs a decision.
+- Files: `apps/web/src/boardColors.ts` and `apps/web/src/Toast.tsx` (new), `apps/web/src/GameView.tsx`, `apps/web/src/PropertyCard.tsx`, `apps/web/src/CodedBoard.tsx`, `apps/web/src/GameCard.tsx`, `apps/web/src/main.tsx`, and `apps/web/src/styles.css`.
+- Changed: `.property-modal` is now `.modal-overlay`, shared by the deed, the card and the trade dialog.
+- Validation: Type-check, 34 engine + 6 Node + 2 Worker tests, and the web build pass. A live two-player game verified each fix: `backdropFilter: none` with the sidebar legible and the balance on the deed, a non-actor dismissing the deed while the actor kept deciding, dark ink on Yellow and Light Blue against white on Brown and Dark Blue, King's Cross Station offering Mortgage only while two streets offered Build, and "You do not have an eligible complete color group" appearing as a fixed toast that cleared itself after five seconds.
+
 ### 2026-08-09 — Claude
 
 - Removed: The retired root PeerJS application — `src/`, `docs/`, `public/`, `index.html`, `vite.config.ts`, and the root `tsconfig.json` — totalling 226 tracked files and roughly 48 MB. This is the cleanup commit the migration had been deferring since 2026-07-11.

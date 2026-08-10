@@ -24,7 +24,7 @@ export function GameCardModal({ event, playerName, onClose }: { event: DrawnCard
     };
   }, [onClose]);
 
-  return <div className="property-modal" onMouseDown={(mouseEvent) => { if (mouseEvent.target === mouseEvent.currentTarget) onClose(); }}>
+  return <div className="modal-overlay" onMouseDown={(mouseEvent) => { if (mouseEvent.target === mouseEvent.currentTarget) onClose(); }}>
     <section className={`game-card ${isChance ? "chance" : "community"}`} role="dialog" aria-modal="true" aria-labelledby="game-card-title" aria-describedby="game-card-text">
       <button className="deed-close" type="button" onClick={onClose} aria-label={`Close ${deckName} card`} ref={closeButtonRef}>×</button>
       <span className="game-card-player">{playerName} drew</span>

@@ -37,11 +37,15 @@ function App() {
   const [room, setRoom] = useState<RoomState | null>(null);
   const [game, setGame] = useState<GameSnapshot | null>(null);
   const [error, setError] = useState("");
+  // Bumped on every new message so an identical repeat still re-arms the toast.
+  const [errorNonce, setErrorNonce] = useState(0);
   const [events, setEvents] = useState<GameEvent[]>([]);
   const [presentationEvents, setPresentationEvents] = useState<GamePresentationEvent[]>([]);
   const eventSequence = useRef(0);
   const presentationSequence = useRef(0);
   const [clockOffset, setClockOffset] = useState(0);
+  const showError = useCallback((message: string) => { setError(message); setErrorNonce((current) => current + 1); }, []);
+  const dismissError = useCallback(() => setError(""), []);
   const [connection, setConnection] = useState<"connecting" | "connected" | "disconnected">("disconnected");
   const socket = useRef<GameSocket | null>(null);
 
@@ -59,7 +63,7 @@ function App() {
     client.on("socket:close", () => setConnection("disconnected"));
     client.on("socket:error", (payload) => {
       setConnection("disconnected");
-      setError(typeof payload === "string" ? payload : "Unable to connect to the game server");
+      showError(typeof payload === "string" ? payload : "Unable to connect to the game server");
     });
     client.on("room:state", (payload) => {
       const state = payload as RoomState;
@@ -107,7 +111,7 @@ function App() {
     client.on("game:error", (payload) => {
       const problem = payload as { code?: unknown; message?: unknown };
       const message = typeof problem?.message === "string" ? problem.message : "Unable to connect to the room";
-      setError(message);
+      showError(message);
       if (problem?.code === "AUTH_FAILED" || problem?.code === "ROOM_NOT_FOUND") {
         sessionStorage.removeItem(SESSION_KEY);
         setRoom(null);
@@ -119,7 +123,7 @@ function App() {
       client.disconnect();
       if (socket.current === client) socket.current = null;
     };
-  }, [session]);
+  }, [session, showError]);
 
   const startSession = (next: GuestSession) => {
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
@@ -176,8 +180,8 @@ function App() {
   }
 
   if (!game) return <main className="entry-shell"><section className="entry-card"><h1>Monopoly</h1><p>Synchronizing game state…</p><button onClick={leaveRoom}>Leave room</button></section></main>;
-  if (game.phase === "lobby") return <LobbyView room={room} game={game} playerId={session.playerId} connection={connection} error={error} send={send} leaveRoom={leaveRoom} />;
-  return <GameView room={room} game={game} playerId={session.playerId} connection={connection} error={error} events={events} presentationEvents={presentationEvents} onPresentationComplete={onPresentationComplete} clockOffset={clockOffset} send={send} leaveRoom={leaveRoom} />;
+  if (game.phase === "lobby") return <LobbyView room={room} game={game} playerId={session.playerId} connection={connection} error={error} errorNonce={errorNonce} onDismissError={dismissError} send={send} leaveRoom={leaveRoom} />;
+  return <GameView room={room} game={game} playerId={session.playerId} connection={connection} error={error} events={events} presentationEvents={presentationEvents} onPresentationComplete={onPresentationComplete} clockOffset={clockOffset} errorNonce={errorNonce} onDismissError={dismissError} send={send} leaveRoom={leaveRoom} />;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
