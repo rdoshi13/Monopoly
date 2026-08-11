@@ -51,6 +51,17 @@ pnpm build
 
 <!-- Newest first. Record meaningful features, fixes, migrations, refactors, or dependency changes. -->
 
+### 2026-08-10 — Codex
+
+- Fixed: Landing-deed dismissal now includes `turnRevision`, so dismissing one visit does not suppress a later visit by the same player to the same still-unowned property.
+- Fixed: Balance-change animations own independent expiry timers. A subsequent game snapshot no longer cancels cleanup and leaves invisible delta elements accumulated in React state.
+- Fixed: Deed ink is selected by comparing the actual contrast of white and dark candidates. Orange, Green, and Pink now use dark ink in addition to Light Blue and Yellow.
+- Fixed: Trade composer and incoming-offer dialogs move focus inside, contain Tab/Shift+Tab navigation, restore prior focus, and let Escape close the composer. Incoming offers remain decision-only.
+- Fixed: Card, money, toast, and trade animations respect `prefers-reduced-motion`; reduced-motion card dismissal also skips the otherwise invisible 420ms return delay.
+- Added: The web package now participates in `pnpm test` with Vitest coverage for repeat landing identities, balance comparison, and every deed-group ink choice.
+- Files: `apps/web/src/GameView.tsx`, `apps/web/src/GameCard.tsx`, `apps/web/src/styles.css`, `apps/web/src/boardColors.ts`, `apps/web/src/gameViewState.ts`, two web tests, web Vitest/package configuration, `pnpm-lock.yaml`, and `MEMORY.md`.
+- Validation: 34 engine + 3 web + 6 Node + 5 Worker tests, workspace type-check, web/server production builds, and Worker dry-run pass.
+
 ### 2026-08-10 — Claude
 
 - Fixed: A card draw logged three lines. `main.tsx` recorded "drew <title>" from `game:card` while the engine emitted the identical sentence as a history line, and the payment reused the card title verbatim, giving "paid £100 for Hospital fees; pay £100". The client no longer records the draw, and `cardReason` keeps only the clause before the instruction.

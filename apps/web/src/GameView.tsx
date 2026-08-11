@@ -6,6 +6,7 @@ import { PropertyCardModal } from "./PropertyCard";
 import { GameCardModal, type DrawnCardEvent } from "./GameCard";
 import { CodedBoard } from "./CodedBoard";
 import { isStreetGroup } from "./boardColors";
+import { compareBalances, landingPresentationKey } from "./gameViewState";
 import { Toast } from "./Toast";
 
 type SendAction = (action: GameAction) => void;
@@ -24,6 +25,7 @@ const playerColors = ["#d43f3f", "#315dc4", "#2c9763", "#d18a22", "#7442a5", "#2
 const playerColor = (icon: number) => playerColors[icon] ?? playerColors[0];
 
 const dieFaces = ["", "⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
+const dialogFocusableSelector = "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex='-1'])";
 
 function cardMovementPath(result: CardResult) {
   if (!result.moved) return [];
@@ -54,14 +56,51 @@ function TradePanel({ game, playerId, send, interactionLocked }: { game: GameSna
   const [offeredPositions, setOfferedPositions] = useState<number[]>([]);
   const [requestedPositions, setRequestedPositions] = useState<number[]>([]);
   const [composerOpen, setComposerOpen] = useState(false);
+  const offerDialogRef = useRef<HTMLElement>(null);
+  const offerAcceptButtonRef = useRef<HTMLButtonElement>(null);
+  const composerDialogRef = useRef<HTMLElement>(null);
+  const composerCloseButtonRef = useRef<HTMLButtonElement>(null);
   const recipient = game.players.find((player) => player.id === tradeTo);
   const canPropose = !interactionLocked && game.currentPlayerId === playerId && game.phase === "awaiting-roll" && game.selectedMode.AllowDeals && !game.pendingTrade;
   const toggle = (values: number[], position: number) => values.includes(position) ? values.filter((value) => value !== position) : [...values, position];
   const summary = (offer: TradeOffer) => `${game.players.find((player) => player.id === offer.from)?.username ?? "Player"} offers £${offer.offeredCash}${offer.offeredPositions.length ? ` and ${offer.offeredPositions.map(propertyName).join(", ")}` : ""} for £${offer.requestedCash}${offer.requestedPositions.length ? ` and ${offer.requestedPositions.map(propertyName).join(", ")}` : ""}.`;
 
   const incomingTrade = game.pendingTrade && game.pendingTrade.to === playerId ? game.pendingTrade : null;
+  const incomingTradeOpen = incomingTrade !== null;
   const closeComposer = useCallback(() => setComposerOpen(false), []);
   useEffect(() => { if (!canPropose) setComposerOpen(false); }, [canPropose]);
+  useEffect(() => {
+    const dialog = incomingTradeOpen ? offerDialogRef.current : composerOpen ? composerDialogRef.current : null;
+    if (!dialog) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const initialFocus = incomingTradeOpen ? offerAcceptButtonRef.current : composerCloseButtonRef.current;
+    initialFocus?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && composerOpen && !incomingTradeOpen) {
+        event.preventDefault();
+        closeComposer();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...dialog.querySelectorAll<HTMLElement>(dialogFocusableSelector)];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus();
+    };
+  }, [incomingTradeOpen, composerOpen, closeComposer]);
 
   return <section className="panel trade-panel">
     <h3>Trades</h3>
@@ -74,19 +113,19 @@ function TradePanel({ game, playerId, send, interactionLocked }: { game: GameSna
       {!canPropose && <p className="muted">{game.selectedMode.AllowDeals ? "Trades can be proposed at the start of your turn." : "Trades are disabled in this mode."}</p>}
     </>}
     {incomingTrade && <div className="modal-overlay trade-offer-overlay">
-      <section className="trade-dialog trade-offer" role="alertdialog" aria-modal="true" aria-labelledby="trade-offer-title">
+      <section className="trade-dialog trade-offer" role="alertdialog" aria-modal="true" aria-labelledby="trade-offer-title" ref={offerDialogRef}>
         <span className="eyebrow">Trade offer</span>
         <h2 id="trade-offer-title">{game.players.find((player) => player.id === incomingTrade.from)?.username ?? "A player"} wants to trade</h2>
         <div className="trade-offer-columns">
           <div><h3>You receive</h3><ul>{incomingTrade.offeredCash > 0 && <li>£{incomingTrade.offeredCash}</li>}{incomingTrade.offeredPositions.map((position) => <li key={position}>{propertyName(position)}</li>)}{!incomingTrade.offeredCash && !incomingTrade.offeredPositions.length && <li className="muted">Nothing</li>}</ul></div>
           <div><h3>You give</h3><ul>{incomingTrade.requestedCash > 0 && <li>£{incomingTrade.requestedCash}</li>}{incomingTrade.requestedPositions.map((position) => <li key={position}>{propertyName(position)}</li>)}{!incomingTrade.requestedCash && !incomingTrade.requestedPositions.length && <li className="muted">Nothing</li>}</ul></div>
         </div>
-        <div className="actions"><button className="primary" onClick={() => send({ type: "trade-accept" })}>Accept trade</button><button className="secondary" onClick={() => send({ type: "trade-reject" })}>Reject</button></div>
+        <div className="actions"><button className="primary" onClick={() => send({ type: "trade-accept" })} ref={offerAcceptButtonRef}>Accept trade</button><button className="secondary" onClick={() => send({ type: "trade-reject" })}>Reject</button></div>
       </section>
     </div>}
     {composerOpen && canPropose && <div className="modal-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) closeComposer(); }}>
-      <section className="trade-dialog" role="dialog" aria-modal="true" aria-labelledby="trade-dialog-title">
-        <button className="deed-close" type="button" onClick={closeComposer} aria-label="Close trade composer">×</button>
+      <section className="trade-dialog" role="dialog" aria-modal="true" aria-labelledby="trade-dialog-title" ref={composerDialogRef}>
+        <button className="deed-close" type="button" onClick={closeComposer} aria-label="Close trade composer" ref={composerCloseButtonRef}>×</button>
         <h2 id="trade-dialog-title">Propose a trade</h2>
         <label>Trade with<select value={tradeTo} onChange={(event) => { setTradeTo(event.target.value); setRequestedPositions([]); }}><option value="">Choose player</option>{game.players.filter((player) => player.id !== playerId).map((player) => <option value={player.id} key={player.id}>{player.username}</option>)}</select></label>
         <div className="cash-grid"><label>You offer<input type="number" min="0" value={offeredCash} onChange={(event) => setOfferedCash(Math.max(0, Math.floor(Number(event.target.value) || 0)))} /></label><label>You request<input type="number" min="0" value={requestedCash} onChange={(event) => setRequestedCash(Math.max(0, Math.floor(Number(event.target.value) || 0)))} /></label></div>
@@ -106,6 +145,7 @@ export function GameView({ room, game, playerId, connection, error, events, pres
   const [moneyDeltas, setMoneyDeltas] = useState<Array<{ id: number; playerId: string; amount: number }>>([]);
   const previousBalances = useRef<Record<string, number> | null>(null);
   const deltaSequence = useRef(0);
+  const moneyDeltaTimers = useRef<Map<number, number>>(new Map());
   const [rollPresentation, setRollPresentation] = useState<RollPresentation | null>(null);
   const [cardPresentation, setCardPresentation] = useState<CardPresentation | null>(null);
   const [lastDiceResult, setLastDiceResult] = useState<DiceResult | null>(null);
@@ -120,22 +160,25 @@ export function GameView({ room, game, playerId, connection, error, events, pres
     }, 3000);
   }, []);
   useEffect(() => {
-    const current: Record<string, number> = {};
-    const fresh: Array<{ id: number; playerId: string; amount: number }> = [];
-    for (const player of game.players) {
-      current[player.id] = player.balance;
-      const before = previousBalances.current?.[player.id];
-      if (before !== undefined && before !== player.balance) fresh.push({ id: deltaSequence.current++, playerId: player.id, amount: player.balance - before });
-    }
+    const { current, changes } = compareBalances(previousBalances.current, game.players);
     previousBalances.current = current;
+    const fresh = changes.map((change) => ({ id: deltaSequence.current++, ...change }));
     if (!fresh.length) return;
     setMoneyDeltas((existing) => [...existing, ...fresh]);
-    const ids = new Set(fresh.map((delta) => delta.id));
-    const timer = window.setTimeout(() => setMoneyDeltas((existing) => existing.filter((delta) => !ids.has(delta.id))), 1600);
-    return () => window.clearTimeout(timer);
+    for (const delta of fresh) {
+      const timer = window.setTimeout(() => {
+        setMoneyDeltas((existing) => existing.filter((candidate) => candidate.id !== delta.id));
+        moneyDeltaTimers.current.delete(delta.id);
+      }, 1600);
+      moneyDeltaTimers.current.set(delta.id, timer);
+    }
   }, [game.players]);
   useEffect(() => { if (!room.turnDeadline) return; const timer = setInterval(() => tick((value) => value + 1), 1000); return () => clearInterval(timer); }, [room.turnDeadline]);
-  useEffect(() => () => { if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current); }, []);
+  useEffect(() => () => {
+    if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
+    moneyDeltaTimers.current.forEach((timer) => window.clearTimeout(timer));
+    moneyDeltaTimers.current.clear();
+  }, []);
   const activePresentationEvent = presentationEvents[0] ?? null;
   const activeDiceResult = activePresentationEvent?.kind === "dice" ? activePresentationEvent.result : null;
   const activeCardResult = activePresentationEvent?.kind === "card" ? activePresentationEvent.result : null;
@@ -246,7 +289,7 @@ export function GameView({ room, game, playerId, connection, error, events, pres
   const presentationBusy = rollPresentation !== null || cardPresentation !== null || presentationEvents.length > 0;
   // Players who are not deciding may dismiss the deed to see the board. The key
   // is per landing, so the next one reopens it rather than staying hidden.
-  const landingKey = game.pendingLanding ? `${game.pendingLanding.playerId}:${game.pendingLanding.position}` : null;
+  const landingKey = landingPresentationKey(game.pendingLanding, game.turnRevision);
   const landingPropertyPosition = game.phase === "awaiting-landing" && landingKey !== null && dismissedLanding !== landingKey ? game.pendingLanding?.position ?? null : null;
   const displayedPropertyPosition = presentationBusy ? null : landingPropertyPosition ?? selectedPropertyPosition;
   const selectedPropertySpace = displayedPropertyPosition === null ? undefined : spaceByPosition.get(displayedPropertyPosition);

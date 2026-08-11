@@ -14,16 +14,25 @@ export const groupColors: Record<string, string> = {
 export const isStreetGroup = (group: string) => group in groupColors;
 
 /**
- * Ink that stays readable on a group colour. White is right for most of the
- * board but unreadable on Yellow and Light Blue, so pick by relative luminance
- * (WCAG) rather than maintaining a per-group exception list.
+ * Ink that stays readable on a group colour. Compare both candidates by WCAG
+ * contrast instead of relying on a luminance cutoff that fails mid-tone groups.
  */
 export function inkOn(color: string): string {
+  const DARK_INK = "#15180f";
   const hex = color.replace("#", "");
-  const channel = (index: number) => {
-    const value = parseInt(hex.slice(index * 2, (index * 2) + 2), 16) / 255;
-    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  const luminance = (value: string) => {
+    const channel = (index: number) => {
+      const component = parseInt(value.slice(index * 2, (index * 2) + 2), 16) / 255;
+      return component <= 0.03928 ? component / 12.92 : ((component + 0.055) / 1.055) ** 2.4;
+    };
+    return (0.2126 * channel(0)) + (0.7152 * channel(1)) + (0.0722 * channel(2));
   };
-  const luminance = (0.2126 * channel(0)) + (0.7152 * channel(1)) + (0.0722 * channel(2));
-  return luminance > 0.45 ? "#15180f" : "#ffffff";
+  const contrast = (first: number, second: number) => {
+    const lighter = Math.max(first, second);
+    const darker = Math.min(first, second);
+    return (lighter + 0.05) / (darker + 0.05);
+  };
+  const background = luminance(hex);
+  const dark = luminance(DARK_INK.slice(1));
+  return contrast(background, dark) >= contrast(background, 1) ? DARK_INK : "#ffffff";
 }

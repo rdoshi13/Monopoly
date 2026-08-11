@@ -227,7 +227,10 @@ button.coded-space.purchasable:focus-visible { z-index: 5; outline: 3px solid #c
 .roll-announcement strong { font-family: Georgia, serif; font-size: clamp(1.4rem, 4vw, 2.3rem); }
 .roll-announcement span { color: #dceae1; font-size: .86rem; }
 @keyframes double-announcement { 0% { opacity: 0; transform: translate(-50%,-44%) scale(.94); } 22%, 72% { opacity: 1; transform: translate(-50%,-50%) scale(1); } 100% { opacity: 0; transform: translate(-50%,-55%) scale(1.02); } }
-@media (prefers-reduced-motion: reduce) { .dice-result.rolling .dice-pair i, .landing-property-modal, .landing-deed-card, .roll-announcement { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .dice-result.rolling .dice-pair i, .landing-property-modal, .landing-deed-card, .roll-announcement, .toast, .game-card, .game-card.returning, .money-delta, .trade-offer { animation: none; }
+  .modal-overlay.card-returning { transition: none; }
+}
 .property-list, .events ol { list-style: none; padding: 0; margin: 0; display: grid; gap: .5rem; }
 .property-list li { display: flex; justify-content: space-between; gap: .5rem; padding-bottom: .5rem; border-bottom: 1px solid #edf0ee; }
 .property-list li > span:first-child { display: grid; }

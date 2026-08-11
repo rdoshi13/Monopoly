@@ -14,6 +14,8 @@ const RETURN_MS = 420;
 export function GameCardModal({ event, playerName, onClose }: { event: DrawnCardEvent; playerName: string; onClose: () => void }) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const cardRef = useRef<HTMLElement>(null);
+  const returnTimerRef = useRef<number | null>(null);
+  const returningRef = useRef(false);
   const [returning, setReturning] = useState(false);
   const isChance = event.deck === "chance";
   const deckName = isChance ? "Chance" : "Community Chest";
@@ -34,10 +36,19 @@ export function GameCardModal({ event, playerName, onClose }: { event: DrawnCard
 
   // Let the card travel back to the pile before the queue advances.
   const dismiss = useCallback(() => {
-    if (returning) return;
+    if (returningRef.current) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      onClose();
+      return;
+    }
+    returningRef.current = true;
     setReturning(true);
-    window.setTimeout(onClose, RETURN_MS);
-  }, [onClose, returning]);
+    returnTimerRef.current = window.setTimeout(onClose, RETURN_MS);
+  }, [onClose]);
+
+  useEffect(() => () => {
+    if (returnTimerRef.current !== null) window.clearTimeout(returnTimerRef.current);
+  }, []);
 
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;

@@ -2,7 +2,7 @@
   "name": "@monopoly/web",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "vite", "build": "tsc && vite build", "typecheck": "tsc --noEmit" },
+  "scripts": { "dev": "vite", "build": "tsc && vite build", "typecheck": "tsc --noEmit", "test": "vitest run" },
   "dependencies": { "@monopoly/game-engine": "workspace:*", "@monopoly/shared-types": "workspace:*", "@vitejs/plugin-react": "^4.0.0", "react": "^18.2.0", "react-dom": "^18.2.0", "socket.io-client": "^4.8.0", "vite": "^4.4.6", "typescript": "^5.6.3" },
-  "devDependencies": { "@types/react": "^18.0.37", "@types/react-dom": "^18.0.11" }
+  "devDependencies": { "@types/react": "^18.0.37", "@types/react-dom": "^18.0.11", "vitest": "^2.1.4" }
 }
