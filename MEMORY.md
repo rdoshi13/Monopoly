@@ -24,6 +24,9 @@ Monopoly is a pnpm-workspace React 18 and TypeScript multiplayer game. A shared 
 - Building, selling, mortgaging and proposing trades are restricted to the owner's own `awaiting-roll` phase. Official rules allow them at any time, including during another player's turn; the engine covers the solvency case that matters by auto-liquidating in `raiseCash` when a debt cannot be paid. This is a deliberate divergence, not an oversight.
 - The root PeerJS implementation was deleted in a dedicated cleanup commit once the workspace reached parity; git history is the reference if it is ever needed.
 - The active edition is the classic UK/London board: London property and station names, UK Chance/Community Chest decks, and pound-denominated UI/history. Numeric prices, rents, and balances remain plain integers internally.
+- Chance and Community Chest remain one authoritative shared deck per room, drawn without replacement across players. Card history and snapshots are public, but the interactive card/movement presentation is queued only by the drawing player's client.
+- Go salary is an explicit authoritative engine operation: every eligible pass or Advance to Go credits £200 exactly once and emits `dice`/card movement before `salary`, followed by public salary history. The web salary presentation suppresses the matching generic +£200 balance animation.
+- A room host may end an active game. Final net worth is cash + full printed price of each unmortgaged property + mortgage value of each mortgaged property + full building purchase cost (a hotel is level five). Standings sort by net worth, then cash, then original player order. Node and Worker resynchronize room host identity from the authoritative engine snapshot before authorization.
 
 ## Gotchas
 
@@ -35,6 +38,7 @@ Monopoly is a pnpm-workspace React 18 and TypeScript multiplayer game. A shared 
 - The Worker's `/ws` upgrade requires `?room=CODE`. Without it the request cannot be routed to the right room's Durable Object and is rejected with 400. The Socket.IO transport ignores the parameter.
 - The workspace is pinned to pnpm 9.12.3. If a Codex fallback runtime exposes pnpm 11, use `/opt/homebrew/bin/pnpm`; pnpm 11 may request an unintended `node_modules` purge.
 - When changing coded-board grid track ratios, update the rotated left/right `.board-space-inner` dimensions as reciprocal geometry; leaving the former 2:1 dimensions on the 1.6:1 side tracks makes labels spill across the board.
+- Salary presentation depends on event order. Wrapped dice rolls must emit `dice` before `salary` and salary history so movement cannot lag behind or lose its non-blocking +£200 animation on separate Worker WebSocket messages.
 
 ## Commands
 
@@ -50,6 +54,17 @@ pnpm build
 ## Change Log
 
 <!-- Newest first. Record meaningful features, fixes, migrations, refactors, or dependency changes. -->
+
+### 2026-08-10 — Codex
+
+- Added: Mortgage now opens the full street/station/utility deed with the mortgage row highlighted and explicit Confirm/Cancel controls. Confirmation rechecks live turn/phase/ownership/mortgage eligibility, dispatches once, and does not advance the turn; close, overlay, Escape, invalidation, and Cancel do not dispatch.
+- Fixed: Card events remain public but only the authoritative drawer queues the interactive Chance/Community Chest modal and card-owned movement. The shared deck still draws without replacement across players and applies one effect.
+- Added: Passing or advancing to Go credits £200 exactly once, records public history, and emits a typed non-blocking salary presentation. Dice-wrap ordering is `dice → salary → history`, and the web suppresses the duplicate generic +£200 delta.
+- Added: The current authenticated room host can confirm End game. The engine computes deterministic component standings, transitions terminal once, rejects later gameplay/end actions, and broadcasts the result to every client. Host promotion after disconnect or bankruptcy is synchronized in both Node and Worker; forged and former-host requests are rejected.
+- Why: Make property finance deliberate, prevent duplicated private card UI, make Go salary visible/auditable, and give rooms an authoritative host-controlled conclusion.
+- Files: `packages/game-engine/src/engine.ts` and its tests; `apps/server/src/index.ts` and integration tests; `apps/cloudflare-server/src/index.ts`, Worker test configuration/stub and regression tests; `apps/web/src/main.tsx`, `GameView.tsx`, `PropertyCard.tsx`, `EndGameDialog.tsx`, state/presentation helpers and tests, and `styles.css`; `MEMORY.md`.
+- Validation: 39 engine + 10 Node + 10 Worker + 11 web tests pass (70 total), workspace type-check passes, web/server production builds pass, Worker dry-run passes, and `git diff --check` is clean. A live isolated two-client Node/Socket.IO room verified host-only End game visibility, confirmation focus/Escape restoration, public history, and identical terminal standings on both clients with no Vite overlay; the only console error was the existing `/favicon.ico` 404.
+- Follow-up: Mortgage/card/Go UI states require deterministic server setup that the public browser flow does not expose; their full live visual sequence remains covered at engine/transport/helper boundaries rather than by browser automation. The `agent-browser` CLI was unavailable, so Phase 7 used the installed Chrome DevTools controller for browser evidence.
 
 ### 2026-08-10 — Codex
 

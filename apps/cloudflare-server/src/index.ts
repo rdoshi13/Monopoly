@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { GameEngine, type GameSnapshot } from "@monopoly/game-engine";
+import { GameEngine, type EngineEvent, type GameSnapshot } from "@monopoly/game-engine";
 import type { GuestSession, RoomPlayer } from "@monopoly/shared-types";
 import { isAllowedOrigin, parseWireMessage } from "./security";
 import { DISCONNECT_GRACE_MS, EMPTY_ROOM_MS, nextWakeup } from "./scheduling";
@@ -125,23 +125,27 @@ export class GameHub extends DurableObject<Env> {
   }
 
   private async action(socket: WebSocket, room: Room, playerId: string, action: unknown) {
+    room.hostPlayerId = room.snapshot?.lobbyHostId ?? room.players[0]?.playerId ?? "";
+    if (typeof action === "object" && action !== null && (action as { type?: unknown }).type === "end-game" && playerId !== room.hostPlayerId) return this.error(socket, "REJECTED", "Only the room host can end the game");
     let engine: GameEngine;
     if (room.snapshot) engine = GameEngine.fromSnapshot(room.snapshot);
     else { engine = new GameEngine(6); for (const player of room.players) engine.connect(player.playerId, player.name); }
     const beforeRevision = engine.snapshot().turnRevision;
-    const events: Array<{ type: string; reason?: string }> = [];
+    const events: EngineEvent[] = [];
     engine.on((event) => events.push(event));
     if (!engine.handle(playerId, action)) return this.error(socket, "REJECTED", events.find((event) => event.type === "rejected")?.reason ?? "Action rejected");
     room.snapshot = engine.snapshot();
+    room.hostPlayerId = room.snapshot.lobbyHostId ?? room.players[0]?.playerId ?? "";
     this.updateTurnDeadline(room, room.snapshot.turnRevision !== beforeRevision);
     await this.persist();
-    for (const event of events) if (event.type !== "state" && event.type !== "rejected") this.broadcast(`game:${event.type}`, event);
+    this.broadcastEngineEvents(events);
     this.broadcastRoom(room);
   }
 
   private emitState(socket: WebSocket, room: Room) { this.emit(socket, "room:state", { roomCode: room.roomCode, hostPlayerId: room.hostPlayerId, locked: room.snapshot?.gameStarted ?? false, turnDeadline: room.turnDeadline ?? null, serverTime: Date.now(), players: room.players.map(({ playerId, name, connected }) => ({ playerId, name, connected })) }); if (room.snapshot) this.emit(socket, "game:state", room.snapshot); }
   private broadcastRoom(room: Room) { for (const socket of this.ctx.getWebSockets()) this.emitState(socket, room); }
   private broadcast(event: string, payload: unknown) { for (const socket of this.ctx.getWebSockets()) this.emit(socket, event, payload); }
+  private broadcastEngineEvents(events: EngineEvent[]) { for (const event of events) if (event.type !== "state" && event.type !== "rejected") this.broadcast(`game:${event.type}`, event); }
   private emit(socket: WebSocket, event: string, payload?: unknown) { if (socket.readyState === 1) socket.send(JSON.stringify({ event, payload })); }
   private error(socket: WebSocket, code: string, message: string) { this.emit(socket, "game:error", { code, message }); }
 
@@ -174,7 +178,9 @@ export class GameHub extends DurableObject<Env> {
     if (room.turnDeadline && room.turnDeadline <= now && room.snapshot) {
       const engine = GameEngine.fromSnapshot(room.snapshot);
       room.turnDeadline = null;
-      if (engine.expireTurn()) { room.snapshot = engine.snapshot(); this.updateTurnDeadline(room, true); this.broadcastRoom(room); }
+      const events: EngineEvent[] = [];
+      engine.on((event) => events.push(event));
+      if (engine.expireTurn()) { room.snapshot = engine.snapshot(); this.broadcastEngineEvents(events); this.updateTurnDeadline(room, true); this.broadcastRoom(room); }
     }
     room.disconnectedAt ??= {};
     for (const [playerId, disconnectedAt] of Object.entries(room.disconnectedAt)) {

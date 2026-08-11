@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { boardSpaces, type GameAction, type GameSnapshot, type TradeOffer } from "@monopoly/game-engine";
 import type { RoomState } from "@monopoly/shared-types";
 import { playerTokens, playSound } from "./assets";
@@ -6,8 +6,11 @@ import { PropertyCardModal } from "./PropertyCard";
 import { GameCardModal, type DrawnCardEvent } from "./GameCard";
 import { CodedBoard } from "./CodedBoard";
 import { isStreetGroup } from "./boardColors";
-import { compareBalances, landingPresentationKey } from "./gameViewState";
+import { compareBalances, landingPresentationKey, mortgageConfirmationProperty } from "./gameViewState";
+import { matchingSalaryPresentationId, readySalaryPresentations, type SalaryPresentation } from "./salaryPresentation";
 import { Toast } from "./Toast";
+import { EndGameDialog } from "./EndGameDialog";
+import { NET_WORTH_TIE_RULE, acquireEndGameDispatch, canHostEndGame } from "./endGameViewState";
 
 type SendAction = (action: GameAction) => void;
 export type GameEvent = { id: number; text: string; playerId?: string };
@@ -136,21 +139,47 @@ function TradePanel({ game, playerId, send, interactionLocked }: { game: GameSna
   </section>;
 }
 
-export function GameView({ room, game, playerId, connection, error, events, presentationEvents, onPresentationComplete, clockOffset, errorNonce, onDismissError, send, leaveRoom }: { room: RoomState; game: GameSnapshot; playerId: string; connection: string; error: string; events: GameEvent[]; presentationEvents: GamePresentationEvent[]; onPresentationComplete: (id: number) => void; clockOffset: number; errorNonce: number; onDismissError: () => void; send: SendAction; leaveRoom: () => void }) {
+export function GameView({ room, game, playerId, connection, error, events, presentationEvents, onPresentationComplete, salaryEvents, onSalaryPresentationComplete, clockOffset, errorNonce, onDismissError, send, leaveRoom }: { room: RoomState; game: GameSnapshot; playerId: string; connection: string; error: string; events: GameEvent[]; presentationEvents: GamePresentationEvent[]; onPresentationComplete: (id: number) => void; salaryEvents: SalaryPresentation[]; onSalaryPresentationComplete: (id: number) => void; clockOffset: number; errorNonce: number; onDismissError: () => void; send: SendAction; leaveRoom: () => void }) {
   const [, tick] = useState(0);
   const [auctionBid, setAuctionBid] = useState(1);
   const [highlightedPlayerId, setHighlightedPlayerId] = useState<string | null>(null);
   const [selectedPropertyPosition, setSelectedPropertyPosition] = useState<number | null>(null);
+  const [mortgageConfirmationPosition, setMortgageConfirmationPosition] = useState<number | null>(null);
   const [dismissedLanding, setDismissedLanding] = useState<string | null>(null);
+  const [endGameConfirmationOpen, setEndGameConfirmationOpen] = useState(false);
+  const [endGameDispatching, setEndGameDispatching] = useState(false);
   const [moneyDeltas, setMoneyDeltas] = useState<Array<{ id: number; playerId: string; amount: number }>>([]);
   const previousBalances = useRef<Record<string, number> | null>(null);
   const deltaSequence = useRef(0);
   const moneyDeltaTimers = useRef<Map<number, number>>(new Map());
+  const salaryTimers = useRef<Map<number, number>>(new Map());
+  const consumedSalaryEvents = useRef<Set<number>>(new Set());
   const [rollPresentation, setRollPresentation] = useState<RollPresentation | null>(null);
   const [cardPresentation, setCardPresentation] = useState<CardPresentation | null>(null);
   const [lastDiceResult, setLastDiceResult] = useState<DiceResult | null>(null);
+  const presentableSalaryEvents = useMemo(() => readySalaryPresentations(salaryEvents, new Set(presentationEvents.map((presentation) => presentation.result.playerId))), [salaryEvents, presentationEvents]);
   const highlightTimer = useRef<number | null>(null);
+  const mortgageDispatchPending = useRef(false);
+  const endGameDispatchPending = useRef(false);
   const closePropertyCard = useCallback(() => setSelectedPropertyPosition(null), []);
+  const closeEndGameConfirmation = useCallback(() => {
+    endGameDispatchPending.current = false;
+    setEndGameDispatching(false);
+    setEndGameConfirmationOpen(false);
+  }, []);
+  const openEndGameConfirmation = useCallback(() => {
+    endGameDispatchPending.current = false;
+    setEndGameDispatching(false);
+    setEndGameConfirmationOpen(true);
+  }, []);
+  const closeMortgageConfirmation = useCallback(() => {
+    mortgageDispatchPending.current = false;
+    setMortgageConfirmationPosition(null);
+  }, []);
+  const openMortgageConfirmation = useCallback((position: number) => {
+    mortgageDispatchPending.current = false;
+    setMortgageConfirmationPosition(position);
+  }, []);
   const highlightPlayer = useCallback((selectedPlayerId: string) => {
     if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
     setHighlightedPlayerId(selectedPlayerId);
@@ -162,7 +191,13 @@ export function GameView({ room, game, playerId, connection, error, events, pres
   useEffect(() => {
     const { current, changes } = compareBalances(previousBalances.current, game.players);
     previousBalances.current = current;
-    const fresh = changes.map((change) => ({ id: deltaSequence.current++, ...change }));
+    const unsuppressed = changes.filter((change) => {
+      const salaryId = matchingSalaryPresentationId(change.playerId, change.amount, salaryEvents, consumedSalaryEvents.current);
+      if (salaryId === null) return true;
+      consumedSalaryEvents.current.add(salaryId);
+      return false;
+    });
+    const fresh = unsuppressed.map((change) => ({ id: deltaSequence.current++, ...change }));
     if (!fresh.length) return;
     setMoneyDeltas((existing) => [...existing, ...fresh]);
     for (const delta of fresh) {
@@ -172,12 +207,26 @@ export function GameView({ room, game, playerId, connection, error, events, pres
       }, 1600);
       moneyDeltaTimers.current.set(delta.id, timer);
     }
-  }, [game.players]);
+  }, [game.players, salaryEvents]);
+  useEffect(() => {
+    const liveIds = new Set(salaryEvents.map((event) => event.id));
+    for (const consumedId of consumedSalaryEvents.current) if (!liveIds.has(consumedId)) consumedSalaryEvents.current.delete(consumedId);
+    for (const event of presentableSalaryEvents) {
+      if (salaryTimers.current.has(event.id)) continue;
+      const timer = window.setTimeout(() => {
+        salaryTimers.current.delete(event.id);
+        onSalaryPresentationComplete(event.id);
+      }, 1800);
+      salaryTimers.current.set(event.id, timer);
+    }
+  }, [salaryEvents, presentableSalaryEvents, onSalaryPresentationComplete]);
   useEffect(() => { if (!room.turnDeadline) return; const timer = setInterval(() => tick((value) => value + 1), 1000); return () => clearInterval(timer); }, [room.turnDeadline]);
   useEffect(() => () => {
     if (highlightTimer.current !== null) window.clearTimeout(highlightTimer.current);
     moneyDeltaTimers.current.forEach((timer) => window.clearTimeout(timer));
     moneyDeltaTimers.current.clear();
+    salaryTimers.current.forEach((timer) => window.clearTimeout(timer));
+    salaryTimers.current.clear();
   }, []);
   const activePresentationEvent = presentationEvents[0] ?? null;
   const activeDiceResult = activePresentationEvent?.kind === "dice" ? activePresentationEvent.result : null;
@@ -281,17 +330,44 @@ export function GameView({ room, game, playerId, connection, error, events, pres
   const auctionSpace = game.pendingAuction ? spaceByPosition.get(game.pendingAuction.position) : undefined;
   const passedAuction = game.pendingAuction?.passedPlayerIds.includes(playerId) ?? false;
   const winner = game.players.find((player) => player.id === game.winnerId);
+  const endGameEligible = canHostEndGame(room, game, playerId);
+  useEffect(() => { if (!endGameEligible) closeEndGameConfirmation(); }, [endGameEligible, closeEndGameConfirmation]);
+  const confirmEndGame = useCallback(() => {
+    if (!canHostEndGame(room, game, playerId)) {
+      closeEndGameConfirmation();
+      return;
+    }
+    if (!acquireEndGameDispatch(endGameDispatchPending)) return;
+    setEndGameDispatching(true);
+    send({ type: "end-game" });
+  }, [room, game, playerId, send, closeEndGameConfirmation]);
   const secondsLeft = room.turnDeadline ? Math.max(0, Math.ceil((room.turnDeadline - (Date.now() + clockOffset)) / 1000)) : null;
   // Run-Down's clock is a game rule and always shows. Every other mode only has
   // an idle backstop, which should stay invisible until it is about to fire.
   const showCountdown = secondsLeft !== null && (game.selectedMode.turnTimer !== undefined || secondsLeft <= 60);
   const playersWithConnection = game.players.map((player) => ({ ...player, connected: room.players.find((candidate) => candidate.playerId === player.id)?.connected ?? false }));
   const presentationBusy = rollPresentation !== null || cardPresentation !== null || presentationEvents.length > 0;
+  const pendingMortgageProperty = mortgageConfirmationPosition === null ? null : mortgageConfirmationProperty(game, playerId, mortgageConfirmationPosition, presentationBusy);
+  const mortgageConfirmationEligible = pendingMortgageProperty !== null;
+  useEffect(() => {
+    if (mortgageConfirmationPosition !== null && !mortgageConfirmationEligible) closeMortgageConfirmation();
+  }, [mortgageConfirmationPosition, mortgageConfirmationEligible, closeMortgageConfirmation]);
+  const confirmMortgage = useCallback(() => {
+    if (mortgageConfirmationPosition === null || mortgageDispatchPending.current) return;
+    const liveProperty = mortgageConfirmationProperty(game, playerId, mortgageConfirmationPosition, presentationBusy);
+    if (!liveProperty) {
+      closeMortgageConfirmation();
+      return;
+    }
+    mortgageDispatchPending.current = true;
+    send({ type: "mortgage", position: liveProperty.posistion });
+    setMortgageConfirmationPosition(null);
+  }, [mortgageConfirmationPosition, game, playerId, presentationBusy, closeMortgageConfirmation, send]);
   // Players who are not deciding may dismiss the deed to see the board. The key
   // is per landing, so the next one reopens it rather than staying hidden.
   const landingKey = landingPresentationKey(game.pendingLanding, game.turnRevision);
   const landingPropertyPosition = game.phase === "awaiting-landing" && landingKey !== null && dismissedLanding !== landingKey ? game.pendingLanding?.position ?? null : null;
-  const displayedPropertyPosition = presentationBusy ? null : landingPropertyPosition ?? selectedPropertyPosition;
+  const displayedPropertyPosition = presentationBusy ? null : landingPropertyPosition ?? pendingMortgageProperty?.posistion ?? selectedPropertyPosition;
   const selectedPropertySpace = displayedPropertyPosition === null ? undefined : spaceByPosition.get(displayedPropertyPosition);
   const selectedPropertyOwner = displayedPropertyPosition === null ? undefined : game.players.find((player) => player.properties.some((property) => property.posistion === displayedPropertyPosition));
   const selectedPropertyState = selectedPropertyOwner?.properties.find((property) => property.posistion === displayedPropertyPosition);
@@ -306,9 +382,9 @@ export function GameView({ room, game, playerId, connection, error, events, pres
       : null;
 
   return <main className="game-shell">
-    <header className="game-header"><div><span className="eyebrow">Room {room.roomCode}</span><h1>Monopoly</h1></div><div className="status"><span className={`connection ${connection}`}>{connection}</span>{showCountdown && <span>{secondsLeft}s left</span>}<button className="text-button" onClick={leaveRoom}>Leave</button></div></header>
+    <header className="game-header"><div><span className="eyebrow">Room {room.roomCode}</span><h1>Monopoly</h1></div><div className="status"><span className={`connection ${connection}`}>{connection}</span>{showCountdown && <span>{secondsLeft}s left</span>}{endGameEligible && <button className="danger compact" type="button" onClick={openEndGameConfirmation}>End game</button>}<button className="text-button" onClick={leaveRoom}>Leave</button></div></header>
     <Toast key={errorNonce} message={error} onDismiss={onDismissError} />
-    {winner && <section className="winner"><span className="eyebrow">Winner</span><h2>{winner.id === playerId ? "You won!" : `${winner.username} won!`}</h2></section>}
+    {game.finalStandings ? <section className="winner final-results"><span className="eyebrow">Final standings</span><h2>{game.finalStandings[0]?.playerId === playerId ? "You won!" : `${game.finalStandings[0]?.username ?? "The winner"} won!`}</h2><ol>{game.finalStandings.map((standing) => <li key={standing.playerId}><strong><span>{standing.rank}. {standing.username}{standing.playerId === playerId ? " (you)" : ""}</span><span>£{standing.netWorth}</span></strong><small>Cash £{standing.cash} · Unmortgaged £{standing.unmortgagedPropertyValue} · Mortgaged £{standing.mortgagedPropertyValue} · Buildings £{standing.buildingValue}</small></li>)}</ol><p>{NET_WORTH_TIE_RULE}</p></section> : winner && <section className="winner"><span className="eyebrow">Winner</span><h2>{winner.id === playerId ? "You won!" : `${winner.username} won!`}</h2></section>}
     <div className="game-layout">
       <CodedBoard game={game} highlightedPlayerId={highlightedPlayerId} animatedToken={animatedPresentation} onSelectProperty={setSelectedPropertyPosition} playerColor={playerColor} propertyName={propertyName} />
       <aside className="sidebar">
@@ -320,14 +396,15 @@ export function GameView({ room, game, playerId, connection, error, events, pres
           {!presentationBusy && myTurn && game.phase === "awaiting-roll" && <div className="actions">{me?.isInJail && <><button onClick={() => send({ type: "unjail", option: "pay" })}>Pay £50</button>{me.getoutCards > 0 && <button onClick={() => send({ type: "unjail", option: "card" })}>Use jail card</button>}</>}<button className="primary" onClick={() => send({ type: "roll" })}>Roll dice</button></div>}
           {game.phase === "awaiting-auction" && game.pendingAuction && <><p>Highest bid: <strong>£{game.pendingAuction.highestBid}</strong>{game.pendingAuction.highestBidderId ? ` by ${game.players.find((player) => player.id === game.pendingAuction?.highestBidderId)?.username ?? "player"}` : ""}</p>{passedAuction ? <p className="muted">You passed. Waiting for the remaining bidders.</p> : <div className="actions"><input aria-label="Auction bid" type="number" min={game.pendingAuction.highestBid + 1} max={me?.balance} value={auctionBid} onChange={(event) => setAuctionBid(Math.max(1, Math.floor(Number(event.target.value) || 1)))} /><button className="primary" onClick={() => send({ type: "auction-bid", amount: auctionBid })}>Bid</button><button className="secondary" onClick={() => send({ type: "auction-pass" })}>Pass</button></div>}</>}
         </section>
-        <section className="panel"><h3>Players</h3><div className="players">{playersWithConnection.map((player) => <button type="button" className={`player-card player-card-button ${player.id === game.currentPlayerId ? "active" : ""}${player.id === highlightedPlayerId ? " selected" : ""}`} style={{ "--player-color": playerColor(player.icon) } as React.CSSProperties} aria-label={`Highlight ${player.username} on the board for 3 seconds`} aria-pressed={player.id === highlightedPlayerId} onClick={() => highlightPlayer(player.id)} key={player.id}><span className={`token token-${player.icon}`}><img src={playerTokens[player.icon] ?? playerTokens[0]} alt="" /></span><span><strong>{player.username}{player.id === playerId ? " (you)" : ""}</strong><small>£{player.balance} · {propertyName(player.position)}{player.isInJail ? " · Jail" : ""}</small></span><i className={player.connected ? "online" : "offline"} />{moneyDeltas.filter((delta) => delta.playerId === player.id).map((delta) => <span className={`money-delta ${delta.amount > 0 ? "gain" : "loss"}`} key={delta.id} aria-hidden="true">{delta.amount > 0 ? "+" : "−"}£{Math.abs(delta.amount)}</span>)}</button>)}</div></section>
-        <section className="panel"><h3>Your properties</h3>{me?.properties.length ? <ul className="property-list">{me.properties.map((property) => <li key={property.posistion}><span><strong>{propertyName(property.posistion)}</strong><small>{property.count === "h" ? "Hotel" : `${property.count} houses`}{property.mortgaged ? " · Mortgaged" : ""}</small></span>{!presentationBusy && myTurn && game.phase === "awaiting-roll" && <span className="mini-actions">{isStreetGroup(property.group) && <><button onClick={() => send({ type: "build", position: property.posistion })}>Build</button>{property.count !== 0 && <button onClick={() => send({ type: "sell-building", position: property.posistion })}>Sell</button>}</>}<button onClick={() => send({ type: property.mortgaged ? "unmortgage" : "mortgage", position: property.posistion })}>{property.mortgaged ? "Redeem" : "Mortgage"}</button></span>}</li>)}</ul> : <p className="muted">No properties yet.</p>}<small className="muted">Bank: {game.bankSupply.houses} houses · {game.bankSupply.hotels} hotels</small></section>
+        <section className="panel"><h3>Players</h3><div className="players">{playersWithConnection.map((player) => <button type="button" className={`player-card player-card-button ${player.id === game.currentPlayerId ? "active" : ""}${player.id === highlightedPlayerId ? " selected" : ""}`} style={{ "--player-color": playerColor(player.icon) } as React.CSSProperties} aria-label={`Highlight ${player.username} on the board for 3 seconds`} aria-pressed={player.id === highlightedPlayerId} onClick={() => highlightPlayer(player.id)} key={player.id}><span className={`token token-${player.icon}`}><img src={playerTokens[player.icon] ?? playerTokens[0]} alt="" /></span><span><strong>{player.username}{player.id === playerId ? " (you)" : ""}</strong><small>£{player.balance} · {propertyName(player.position)}{player.isInJail ? " · Jail" : ""}</small></span><i className={player.connected ? "online" : "offline"} />{moneyDeltas.filter((delta) => delta.playerId === player.id).map((delta) => <span className={`money-delta ${delta.amount > 0 ? "gain" : "loss"}`} key={delta.id} aria-hidden="true">{delta.amount > 0 ? "+" : "−"}£{Math.abs(delta.amount)}</span>)}{presentableSalaryEvents.filter((event) => event.playerId === player.id).map((event) => <span className="go-salary" key={event.id} aria-hidden="true">{event.reason === "advanced" ? "Advanced to Go" : "Passed Go"} · +£{event.amount}</span>)}</button>)}</div>{presentableSalaryEvents.slice(-1).map((event) => <span className="visually-hidden" role="status" key={event.id}>{game.players.find((player) => player.id === event.playerId)?.username ?? "A player"} {event.reason === "advanced" ? "advanced to Go" : "passed Go"} and collected £{event.amount}</span>)}</section>
+        <section className="panel"><h3>Your properties</h3>{me?.properties.length ? <ul className="property-list">{me.properties.map((property) => <li key={property.posistion}><span><strong>{propertyName(property.posistion)}</strong><small>{property.count === "h" ? "Hotel" : `${property.count} houses`}{property.mortgaged ? " · Mortgaged" : ""}</small></span>{!presentationBusy && myTurn && game.phase === "awaiting-roll" && <span className="mini-actions">{isStreetGroup(property.group) && <><button onClick={() => send({ type: "build", position: property.posistion })}>Build</button>{property.count !== 0 && <button onClick={() => send({ type: "sell-building", position: property.posistion })}>Sell</button>}</>}<button onClick={() => property.mortgaged ? send({ type: "unmortgage", position: property.posistion }) : openMortgageConfirmation(property.posistion)}>{property.mortgaged ? "Redeem" : "Mortgage"}</button></span>}</li>)}</ul> : <p className="muted">No properties yet.</p>}<small className="muted">Bank: {game.bankSupply.houses} houses · {game.bankSupply.hotels} hotels</small></section>
         <TradePanel game={game} playerId={playerId} send={send} interactionLocked={presentationBusy} />
         <section className="panel events"><h3>Game events</h3>{events.length ? <ol>{events.map((event) => <li key={event.id}>{event.playerId ? `${game.players.find((player) => player.id === event.playerId)?.username ?? "A player"} ${event.text}` : event.text}</li>)}</ol> : <p className="muted">Rolls, cards and payments will appear here.</p>}</section>
       </aside>
     </div>
     {rollPresentation?.phase === "double" && <div className="roll-announcement" role="status"><strong>{rollingPlayerName} rolled a double!</strong><span>Another roll follows this move.</span></div>}
-    {cardPresentation?.phase === "card" ? <GameCardModal event={cardPresentation.result} playerName={cardPlayerName} onClose={continueCardPresentation} /> : selectedPropertySpace && <PropertyCardModal space={selectedPropertySpace} ownerName={selectedPropertyOwner?.username} mortgaged={selectedPropertyState?.mortgaged} development={selectedPropertyState?.count} sourcePosition={landingPropertyPosition ?? undefined} balance={me?.balance} onClose={landingPropertyPosition === null ? closePropertyCard : myTurn ? undefined : () => setDismissedLanding(landingKey)} actions={landingPropertyPosition !== null && myTurn ? { onBuy: () => send({ type: "landing", decision: "buy" }), onAuction: () => send({ type: "landing", decision: "skip" }) } : undefined} />}
+    {cardPresentation?.phase === "card" ? <GameCardModal event={cardPresentation.result} playerName={cardPlayerName} onClose={continueCardPresentation} /> : selectedPropertySpace && <PropertyCardModal space={selectedPropertySpace} ownerName={selectedPropertyOwner?.username} mortgaged={selectedPropertyState?.mortgaged} development={selectedPropertyState?.count} sourcePosition={landingPropertyPosition ?? undefined} balance={me?.balance} onClose={landingPropertyPosition !== null ? myTurn ? undefined : () => setDismissedLanding(landingKey) : pendingMortgageProperty ? closeMortgageConfirmation : closePropertyCard} actions={landingPropertyPosition !== null && myTurn ? { onBuy: () => send({ type: "landing", decision: "buy" }), onAuction: () => send({ type: "landing", decision: "skip" }) } : undefined} mortgageConfirmation={landingPropertyPosition === null && pendingMortgageProperty ? { onConfirm: confirmMortgage, onCancel: closeMortgageConfirmation } : undefined} />}
+    {endGameConfirmationOpen && endGameEligible && <EndGameDialog dispatching={endGameDispatching} onConfirm={confirmEndGame} onClose={closeEndGameConfirmation} />}
   </main>;
 }
 

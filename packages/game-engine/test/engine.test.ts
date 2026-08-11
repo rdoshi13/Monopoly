@@ -155,13 +155,30 @@ describe("GameEngine authority", () => {
         expect(engine.handle("a", { type: "select-mode", modeId: "monopol" })).toBe(false);
     });
 
-    it("applies mortgages only to undeveloped owned property and suppresses rent", () => {
+    it("mortgages an undeveloped property without ending the owner's turn and suppresses rent", () => {
         const engine = game([0, 1 / 3, 0, 0]);
         ready(engine);
-        const internal = engine as unknown as { players: Map<string, { properties: Array<{ posistion: number; count: 0; group: string }>; position: number; balance: number }> };
-        internal.players.get("a")!.properties = [{ posistion: 5, count: 0, group: "Railroad" }];
+        const internal = engine as unknown as { players: Map<string, { properties: Array<{ posistion: number; count: 0; group: string; mortgaged: boolean }>; position: number; balance: number }> };
+        internal.players.get("a")!.properties = [{ posistion: 5, count: 0, group: "Railroad", mortgaged: false }];
+        const beforeMortgage = engine.snapshot();
+
         expect(engine.handle("a", { type: "mortgage", position: 5 })).toBe(true);
-        expect(player(engine, "a").balance).toBe(1600);
+        expect(engine.snapshot()).toEqual({
+            ...beforeMortgage,
+            players: beforeMortgage.players.map((candidate) => candidate.id === "a"
+                ? {
+                    ...candidate,
+                    balance: 1600,
+                    properties: [{ ...candidate.properties[0], mortgaged: true }],
+                }
+                : candidate),
+        });
+        expect(engine.snapshot()).toMatchObject({
+            currentPlayerId: "a",
+            phase: "awaiting-roll",
+            turnRevision: beforeMortgage.turnRevision,
+        });
+
         internal.players.get("b")!.position = 3;
         expect(engine.handle("a", { type: "roll" })).toBe(true);
         expect(engine.handle("b", { type: "roll" })).toBe(true);
@@ -290,15 +307,85 @@ describe("GameEngine authority", () => {
         expect(player(engine, "b").balance).toBe(1696);
     });
 
-    it("awards £200 when an Advance to Go card moves the player to Go", () => {
-        const engine = game([0, 1 / 6, 0]);
+    it("awards the drawer £200 exactly once when an Advance to Go card moves them to Go", () => {
+        const engine = game([0, 1 / 6]);
         ready(engine);
-        const internal = engine as unknown as { players: Map<string, { position: number }> };
+        const events: EngineEvent[] = [];
+        engine.on((event) => events.push(event));
+        const internal = engine as unknown as {
+            players: Map<string, { position: number }>;
+            cardDecks: Record<string, { remaining: number[]; discard: number[] }>;
+        };
+        internal.cardDecks.chance = { remaining: [0], discard: [] };
         internal.players.get("a")!.position = 4;
+        const aliceBefore = player(engine, "a");
+        const bobBefore = player(engine, "b");
 
         expect(engine.handle("a", { type: "roll" })).toBe(true);
         expect(player(engine, "a").position).toBe(0);
+        expect(player(engine, "a").balance - aliceBefore.balance).toBe(200);
+        expect(player(engine, "b")).toEqual(bobBefore);
+        expect(events.filter((event) => event.type === "card")).toEqual([
+            expect.objectContaining({
+                type: "card",
+                playerId: "a",
+                deck: "chance",
+                card: expect.objectContaining({ title: "Advance to Go; collect £200" }),
+                fromPosition: 7,
+                position: 0,
+            }),
+        ]);
+        expect(events.filter((event) => event.type === "salary")).toEqual([
+            { type: "salary", playerId: "a", amount: 200, fromPosition: 7, position: 0, reason: "advanced" },
+        ]);
+        expect(events.filter((event) => event.type === "history" && event.action.includes("collected £200"))).toEqual([
+            { type: "history", action: "Alice advanced to Go and collected £200" },
+        ]);
+    });
+
+    it("awards and announces one £200 salary when a dice move passes Go", () => {
+        const engine = game([0, 0]);
+        ready(engine);
+        const events: EngineEvent[] = [];
+        engine.on((event) => events.push(event));
+        const internal = engine as unknown as { players: Map<string, { position: number }> };
+        internal.players.get("a")!.position = 39;
+
+        expect(engine.handle("a", { type: "roll" })).toBe(true);
         expect(player(engine, "a").balance).toBe(1700);
+        expect(events.filter((event) => event.type === "salary")).toEqual([
+            { type: "salary", playerId: "a", amount: 200, fromPosition: 39, position: 1, reason: "passed" },
+        ]);
+        expect(events.filter((event) => event.type === "history" && event.action.includes("collected £200"))).toEqual([
+            { type: "history", action: "Alice passed Go and collected £200" },
+        ]);
+        expect(events.filter((event) => event.type === "dice" || event.type === "salary" || (event.type === "history" && event.action.includes("collected £200"))).map((event) => event.type)).toEqual([
+            "dice", "salary", "history",
+        ]);
+    });
+
+    it("pays nearest-target crossings but not backward relative card movement", () => {
+        const nearest = game([1 / 3, 1 / 2]);
+        ready(nearest);
+        const nearestEvents: EngineEvent[] = [];
+        nearest.on((event) => nearestEvents.push(event));
+        const nearestInternal = nearest as unknown as { players: Map<string, { position: number }>; cardDecks: Record<string, { remaining: number[]; discard: number[] }> };
+        nearestInternal.players.get("a")!.position = 29;
+        nearestInternal.cardDecks.chance = { remaining: [4], discard: [] };
+        expect(nearest.handle("a", { type: "roll" })).toBe(true);
+        expect(player(nearest, "a").balance).toBe(1700);
+        expect(nearestEvents.filter((event) => event.type === "salary")).toHaveLength(1);
+
+        const backward = game([1 / 3, 1 / 2]);
+        ready(backward);
+        const backwardEvents: EngineEvent[] = [];
+        backward.on((event) => backwardEvents.push(event));
+        const backwardInternal = backward as unknown as { cardDecks: Record<string, { remaining: number[]; discard: number[] }> };
+        backwardInternal.cardDecks.chance = { remaining: [9], discard: [] };
+        expect(backward.handle("a", { type: "roll" })).toBe(true);
+        expect(player(backward, "a").position).toBe(4);
+        expect(player(backward, "a").balance).toBe(1300);
+        expect(backwardEvents.filter((event) => event.type === "salary")).toEqual([]);
     });
 
     it("charges twice the normal rent after advancing to the nearest Railroad", () => {
@@ -597,5 +684,69 @@ describe("GameEngine authority", () => {
         expect(engine.snapshot().players.map((candidate) => candidate.id)).toEqual(["b"]);
         expect(player(engine, "b").properties.map((property) => property.posistion)).toEqual(expect.arrayContaining([5, 39]));
         expect(player(engine, "b").properties.find((property) => property.posistion === 5)?.mortgaged).toBe(true);
+    });
+
+    it("ends on host request with deterministic net-worth standings and component breakdowns", () => {
+        const engine = game();
+        engine.connect("a", "Alice");
+        engine.connect("b", "Bob");
+        engine.connect("c", "Cara");
+        for (const id of ["a", "b", "c"]) engine.handle(id, { type: "ready", ready: true });
+        const internal = engine as unknown as { players: Map<string, { balance: number; properties: Array<{ posistion: number; count: 0 | 2 | "h"; group: string; mortgaged: boolean }> }> };
+        Object.assign(internal.players.get("a")!, {
+            balance: 1000,
+            properties: [{ posistion: 1, count: 2, group: "Brown", mortgaged: false }, { posistion: 5, count: 0, group: "Railroad", mortgaged: true }],
+        });
+        Object.assign(internal.players.get("b")!, { balance: 1230, properties: [{ posistion: 3, count: 0, group: "Brown", mortgaged: true }] });
+        Object.assign(internal.players.get("c")!, { balance: 950, properties: [{ posistion: 3, count: "h", group: "Brown", mortgaged: false }] });
+        const events: EngineEvent[] = [];
+        engine.on((event) => events.push(event));
+
+        expect(engine.handle("a", { type: "end-game" })).toBe(true);
+        expect(engine.snapshot()).toMatchObject({
+            phase: "finished",
+            winnerId: "b",
+            finalStandings: [
+                { playerId: "b", username: "Bob", rank: 1, cash: 1230, unmortgagedPropertyValue: 0, mortgagedPropertyValue: 30, buildingValue: 0, netWorth: 1260 },
+                { playerId: "a", username: "Alice", rank: 2, cash: 1000, unmortgagedPropertyValue: 60, mortgagedPropertyValue: 100, buildingValue: 100, netWorth: 1260 },
+                { playerId: "c", username: "Cara", rank: 3, cash: 950, unmortgagedPropertyValue: 60, mortgagedPropertyValue: 0, buildingValue: 250, netWorth: 1260 },
+            ],
+        });
+        expect(events.filter((event) => event.type === "game-ended")).toHaveLength(1);
+        expect(events).toContainEqual({ type: "history", action: "Alice ended the game. Bob won with a net worth of £1260" });
+    });
+
+    it("breaks equal net worth and cash by original player order and ends only once", () => {
+        const engine = game();
+        ready(engine);
+        const events: EngineEvent[] = [];
+        engine.on((event) => events.push(event));
+
+        expect(engine.handle("b", { type: "end-game" })).toBe(false);
+        expect(engine.snapshot().phase).toBe("awaiting-roll");
+        expect(engine.handle("a", { type: "end-game" })).toBe(true);
+        const finished = engine.snapshot();
+        expect(finished.finalStandings?.map((standing) => standing.playerId)).toEqual(["a", "b"]);
+        expect(finished.winnerId).toBe("a");
+        expect(engine.handle("a", { type: "end-game" })).toBe(false);
+        expect(engine.handle("a", { type: "roll" })).toBe(false);
+        expect(engine.snapshot()).toEqual(finished);
+        expect(events.filter((event) => event.type === "game-ended")).toHaveLength(1);
+    });
+
+    it("authorizes the promoted host after the original host is removed", () => {
+        const engine = game();
+        engine.connect("a", "Alice");
+        engine.connect("b", "Bob");
+        engine.connect("c", "Cara");
+        for (const id of ["a", "b", "c"]) engine.handle(id, { type: "ready", ready: true });
+
+        engine.disconnect("a");
+
+        expect(engine.snapshot().lobbyHostId).toBe("b");
+        expect(engine.handle("a", { type: "end-game" })).toBe(false);
+        expect(engine.snapshot().phase).not.toBe("finished");
+        expect(engine.handle("b", { type: "end-game" })).toBe(true);
+        expect(engine.snapshot()).toMatchObject({ phase: "finished", winnerId: "b" });
     });
 });

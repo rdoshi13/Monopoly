@@ -148,6 +148,16 @@ function broadcast(room: Room) {
   io.to(room.roomCode).emit("game:state", room.engine.snapshot());
 }
 
+function syncRoomHost(room: Room) {
+  room.hostPlayerId = room.engine.snapshot().lobbyHostId ?? room.players[0]?.playerId ?? "";
+}
+
+function broadcastEngineEvents(room: Room, events: EngineEvent[]) {
+  for (const event of events) {
+    if (event.type !== "state" && event.type !== "rejected") io.to(room.roomCode).emit(`game:${event.type}`, event);
+  }
+}
+
 function updateTurnDeadline(room: Room, reset: boolean) {
   const existing = turnTimers.get(room.roomCode);
   if (existing) clearTimeout(existing);
@@ -166,7 +176,12 @@ function updateTurnDeadline(room: Room, reset: boolean) {
   const timer = setTimeout(() => {
     if (rooms.get(room.roomCode) !== room || !room.turnDeadline || room.turnDeadline > Date.now()) return updateTurnDeadline(room, false);
     room.turnDeadline = null;
-    if (room.engine.expireTurn()) {
+    const events: EngineEvent[] = [];
+    const unsubscribe = room.engine.on((event) => events.push(event));
+    const expired = room.engine.expireTurn();
+    unsubscribe();
+    if (expired) {
+      broadcastEngineEvents(room, events);
       updateTurnDeadline(room, true);
       broadcast(room);
     }
@@ -180,7 +195,7 @@ function removeExpiredPlayer(room: Room, playerId: string) {
   if (!player || player.connected) return;
   room.engine.disconnect(playerId);
   room.players = room.players.filter((candidate) => candidate.playerId !== playerId);
-  room.hostPlayerId = room.engine.snapshot().lobbyHostId ?? room.players[0]?.playerId ?? "";
+  syncRoomHost(room);
   updateTurnDeadline(room, true);
   broadcast(room);
 }
@@ -216,6 +231,10 @@ io.on("connection", (socket) => {
     const identity = identities.get(socket.id);
     const room = identity && rooms.get(identity.roomCode);
     if (!room) return socket.emit("game:error", { code: "NOT_JOINED", message: "Join a room first" });
+    syncRoomHost(room);
+    if (typeof action === "object" && action !== null && (action as { type?: unknown }).type === "end-game" && identity.playerId !== room.hostPlayerId) {
+      return socket.emit("game:error", { code: "REJECTED", message: "Only the room host can end the game" });
+    }
 
     const beforeRevision = room.engine.snapshot().turnRevision;
     const events: EngineEvent[] = [];
@@ -226,9 +245,8 @@ io.on("connection", (socket) => {
       const rejection = events.find((event) => event.type === "rejected");
       return socket.emit("game:error", { code: "REJECTED", message: rejection?.type === "rejected" ? rejection.reason : "Action rejected" });
     }
-    for (const event of events) {
-      if (event.type !== "state" && event.type !== "rejected") io.to(room.roomCode).emit(`game:${event.type}`, event);
-    }
+    broadcastEngineEvents(room, events);
+    syncRoomHost(room);
     updateTurnDeadline(room, room.engine.snapshot().turnRevision !== beforeRevision);
     broadcast(room);
   });

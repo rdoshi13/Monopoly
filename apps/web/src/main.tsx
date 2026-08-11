@@ -5,6 +5,8 @@ import type { Card, GameAction, GameSnapshot } from "@monopoly/game-engine";
 import { createGameSocket, type GameSocket } from "./socket";
 import { GameView, LobbyView, propertyName, type CardResult, type DiceResult, type GameEvent, type GamePresentationEvent } from "./GameView";
 import { playSound } from "./assets";
+import { isCardPresentationForPlayer } from "./presentationQueue";
+import { parseSalaryPresentation, removeSalaryPresentation, type SalaryPresentation } from "./salaryPresentation";
 import "./styles.css";
 
 const api = import.meta.env.VITE_API_BASE ?? "http://localhost:4000";
@@ -41,8 +43,10 @@ function App() {
   const [errorNonce, setErrorNonce] = useState(0);
   const [events, setEvents] = useState<GameEvent[]>([]);
   const [presentationEvents, setPresentationEvents] = useState<GamePresentationEvent[]>([]);
+  const [salaryEvents, setSalaryEvents] = useState<SalaryPresentation[]>([]);
   const eventSequence = useRef(0);
   const presentationSequence = useRef(0);
+  const salarySequence = useRef(0);
   const [clockOffset, setClockOffset] = useState(0);
   const showError = useCallback((message: string) => { setError(message); setErrorNonce((current) => current + 1); }, []);
   const dismissError = useCallback(() => setError(""), []);
@@ -91,10 +95,17 @@ function App() {
     client.on("game:card", (payload) => {
       const event = payload as { playerId?: unknown; deck?: unknown; card?: Partial<Card>; fromPosition?: unknown; position?: unknown; moved?: unknown; fromJail?: unknown; toJail?: unknown };
       if (typeof event.playerId === "string" && (event.deck === "chance" || event.deck === "communitychest") && typeof event.card?.title === "string" && typeof event.card.action === "string" && Number.isInteger(event.fromPosition) && Number(event.fromPosition) >= 0 && Number(event.fromPosition) < 40 && Number.isInteger(event.position) && Number(event.position) >= 0 && Number(event.position) < 40 && typeof event.moved === "boolean" && typeof event.fromJail === "boolean" && typeof event.toJail === "boolean") {
+        if (!isCardPresentationForPlayer(event.playerId, session.playerId)) return;
         const result: CardResult = { id: presentationSequence.current++, playerId: event.playerId, deck: event.deck, card: event.card as Card, fromPosition: Number(event.fromPosition), position: Number(event.position), moved: event.moved, fromJail: event.fromJail, toJail: event.toJail };
         // No record() here: the engine's history line already reports the draw.
         setPresentationEvents((current) => [...current, { kind: "card", result }]);
       }
+    });
+    client.on("game:salary", (payload) => {
+      const event = parseSalaryPresentation(payload, salarySequence.current);
+      if (!event) return;
+      salarySequence.current += 1;
+      setSalaryEvents((current) => [...current, event]);
     });
     client.on("game:history", (payload) => {
       const event = payload as { action?: unknown };
@@ -132,6 +143,7 @@ function App() {
     setGame(null);
     setEvents([]);
     setPresentationEvents([]);
+    setSalaryEvents([]);
     setSession(next);
   };
 
@@ -143,6 +155,7 @@ function App() {
     setGame(null);
     setEvents([]);
     setPresentationEvents([]);
+    setSalaryEvents([]);
     setConnection("disconnected");
     setError("");
   };
@@ -160,6 +173,7 @@ function App() {
 
   const send = (action: GameAction) => socket.current?.emit("game:action", action);
   const onPresentationComplete = useCallback((id: number) => setPresentationEvents((current) => current.filter((event) => event.result.id !== id)), []);
+  const onSalaryPresentationComplete = useCallback((id: number) => setSalaryEvents((current) => removeSalaryPresentation(current, id)), []);
 
   if (!session) {
     return <main className="entry-shell"><section className="entry-card">
@@ -181,7 +195,7 @@ function App() {
 
   if (!game) return <main className="entry-shell"><section className="entry-card"><h1>Monopoly</h1><p>Synchronizing game state…</p><button onClick={leaveRoom}>Leave room</button></section></main>;
   if (game.phase === "lobby") return <LobbyView room={room} game={game} playerId={session.playerId} connection={connection} error={error} errorNonce={errorNonce} onDismissError={dismissError} send={send} leaveRoom={leaveRoom} />;
-  return <GameView room={room} game={game} playerId={session.playerId} connection={connection} error={error} events={events} presentationEvents={presentationEvents} onPresentationComplete={onPresentationComplete} clockOffset={clockOffset} errorNonce={errorNonce} onDismissError={dismissError} send={send} leaveRoom={leaveRoom} />;
+  return <GameView room={room} game={game} playerId={session.playerId} connection={connection} error={error} events={events} presentationEvents={presentationEvents} onPresentationComplete={onPresentationComplete} salaryEvents={salaryEvents} onSalaryPresentationComplete={onSalaryPresentationComplete} clockOffset={clockOffset} errorNonce={errorNonce} onDismissError={dismissError} send={send} leaveRoom={leaveRoom} />;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

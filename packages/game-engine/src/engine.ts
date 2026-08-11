@@ -17,10 +17,22 @@ const AUCTION_SECONDS = 60;
 
 export type GamePhase = "lobby" | "awaiting-roll" | "awaiting-landing" | "awaiting-auction" | "finished";
 export type ModeId = "classic" | "monopol" | "run-down";
+export interface FinalStanding {
+    playerId: string;
+    username: string;
+    rank: number;
+    cash: number;
+    unmortgagedPropertyValue: number;
+    mortgagedPropertyValue: number;
+    buildingValue: number;
+    netWorth: number;
+}
 export type EngineEvent =
     | { type: "state"; state: GameSnapshot }
     | { type: "dice"; playerId: string; dice: [number, number]; fromPosition: number; position: number; moved: boolean; fromJail: boolean }
     | { type: "card"; playerId: string; deck: CardDeckName; card: Card; fromPosition: number; position: number; moved: boolean; fromJail: boolean; toJail: boolean }
+    | { type: "salary"; playerId: string; amount: 200; fromPosition: number; position: number; reason: "passed" | "advanced" }
+    | { type: "game-ended"; winnerId: string; standings: FinalStanding[] }
     | { type: "history"; action: string }
     | { type: "rejected"; playerId: string; reason: string };
 
@@ -82,6 +94,7 @@ export interface GameSnapshot {
     pendingTrade: TradeOffer | null;
     pendingAuction: AuctionState | null;
     winnerId: string | null;
+    finalStandings: FinalStanding[] | null;
     pausedPlayerId: string | null;
     consecutiveDoubles: number;
     extraRollPending: boolean;
@@ -108,7 +121,8 @@ export type GameAction =
     | { type: "trade-reject" }
     | { type: "trade-cancel" }
     | { type: "auction-bid"; amount: number }
-    | { type: "auction-pass" };
+    | { type: "auction-pass" }
+    | { type: "end-game" };
 
 const modes: Record<ModeId, MonopolyMode> = {
     classic: MonopolyModes[0],
@@ -213,6 +227,7 @@ export function parseAction(value: unknown): GameAction | null {
                 ? { type: "select-mode", modeId: value.modeId }
                 : null;
         case "roll":
+        case "end-game":
         case "trade-accept":
         case "trade-reject":
         case "trade-cancel":
@@ -253,6 +268,7 @@ export class GameEngine {
     private pendingTrade: TradeOffer | null = null;
     private pendingAuction: AuctionState | null = null;
     private winnerId: string | null = null;
+    private finalStandings: FinalStanding[] | null = null;
     private pausedPlayerId: string | null = null;
     private consecutiveDoubles = 0;
     private extraRollPending = false;
@@ -279,6 +295,7 @@ export class GameEngine {
         engine.pendingTrade = clone(snapshot.pendingTrade);
         engine.pendingAuction = clone(snapshot.pendingAuction ?? null);
         engine.winnerId = snapshot.winnerId;
+        engine.finalStandings = clone(snapshot.finalStandings ?? null);
         engine.pausedPlayerId = snapshot.pausedPlayerId ?? null;
         engine.consecutiveDoubles = snapshot.consecutiveDoubles ?? 0;
         engine.extraRollPending = snapshot.extraRollPending ?? false;
@@ -351,6 +368,7 @@ export class GameEngine {
         if (!action) return this.reject(actorId, "Invalid action payload");
         const actor = this.players.get(actorId);
         if (!actor) return this.reject(actorId, "Unknown player");
+        if (action.type === "end-game") return this.endGame(actor);
         if (this.pausedPlayerId) return this.reject(actorId, "Game is paused while a player reconnects");
         switch (action.type) {
             case "ready": return this.setReady(actor, action.ready);
@@ -377,6 +395,7 @@ export class GameEngine {
             lobbyHostId: this.lobbyHostId, modeId: this.modeId, selectedMode: modes[this.modeId],
             players: this.order.map((id) => this.players.get(id)).filter((player): player is EnginePlayer => Boolean(player)),
             pendingLanding: this.pendingLanding, pendingTrade: this.pendingTrade, pendingAuction: this.pendingAuction, winnerId: this.winnerId, pausedPlayerId: this.pausedPlayerId,
+            finalStandings: this.finalStandings,
             consecutiveDoubles: this.consecutiveDoubles, extraRollPending: this.extraRollPending,
             cardDecks: this.cardDecks, heldJailCards: this.heldJailCards,
             turnRevision: this.turnRevision,
@@ -488,8 +507,9 @@ export class GameEngine {
         }
         const previous = player.position;
         player.position = (player.position + dice[0] + dice[1]) % 40;
-        if (player.position < previous) player.balance += 200;
+        const passedGo = player.position < previous;
         emitDice(true);
+        if (passedGo) this.awardGoSalary(player, previous, player.position, "passed");
         this.resolveSpace(player, dice[0] + dice[1]);
         this.publish();
         return true;
@@ -817,11 +837,17 @@ export class GameEngine {
     }
 
     private moveByCard(player: EnginePlayer, card: Card) {
-        if (typeof card.count === "number") { player.position = (player.position + card.count + 40) % 40; return; }
+        if (typeof card.count === "number") {
+            const fromPosition = player.position;
+            player.position = (player.position + card.count + 40) % 40;
+            if (card.count > 0 && fromPosition + card.count >= 40) this.awardGoSalary(player, fromPosition, player.position, "passed");
+            return;
+        }
+        const fromPosition = player.position;
         const next = destinationById(player.position, card.tileid);
         if (next === null) return;
-        if (next < player.position) player.balance += 200;
         player.position = next;
+        if (next < fromPosition) this.awardGoSalary(player, fromPosition, next, next === 0 ? "advanced" : "passed");
     }
 
     private cardDestination(player: EnginePlayer, card: Card): { position: number; toJail: boolean } | null {
@@ -842,9 +868,16 @@ export class GameEngine {
     }
 
     private moveNearest(player: EnginePlayer, groupId?: string) {
+        const fromPosition = player.position;
         const next = this.nearestPosition(player.position, groupId);
-        if (next < player.position) player.balance += 200;
         player.position = next;
+        if (next < fromPosition) this.awardGoSalary(player, fromPosition, next, "passed");
+    }
+
+    private awardGoSalary(player: EnginePlayer, fromPosition: number, position: number, reason: "passed" | "advanced") {
+        player.balance += 200;
+        this.emit({ type: "salary", playerId: player.id, amount: 200, fromPosition, position, reason });
+        this.history(`${player.username} ${reason === "advanced" ? "advanced to" : "passed"} Go and collected £200`);
     }
 
     private rentFor(owner: EnginePlayer, position: number, rollTotal: number) {
@@ -972,6 +1005,57 @@ export class GameEngine {
     }
 
     private sendToJail(player: EnginePlayer) { player.position = 10; player.isInJail = true; player.jailTurnsRemaining = 3; this.consecutiveDoubles = 0; this.extraRollPending = false; }
+    private scoreFinalStandings(): FinalStanding[] {
+        const originalOrder = new Map(this.order.map((id, index) => [id, index]));
+        return this.order.map((id) => this.players.get(id)).filter((player): player is EnginePlayer => Boolean(player)).map((player) => {
+            let unmortgagedPropertyValue = 0;
+            let mortgagedPropertyValue = 0;
+            let buildingValue = 0;
+            for (const property of player.properties) {
+                const space = propertyByPosition.get(property.posistion);
+                const price = Number(space?.price ?? 0);
+                const houseCost = Number(space?.housecost ?? 0);
+                if (property.mortgaged) mortgagedPropertyValue += Math.floor(price / 2);
+                else unmortgagedPropertyValue += price;
+                buildingValue += buildingLevel(property) * houseCost;
+            }
+            return {
+                playerId: player.id,
+                username: player.username,
+                rank: 0,
+                cash: player.balance,
+                unmortgagedPropertyValue,
+                mortgagedPropertyValue,
+                buildingValue,
+                netWorth: player.balance + unmortgagedPropertyValue + mortgagedPropertyValue + buildingValue,
+            };
+        }).sort((left, right) => right.netWorth - left.netWorth || right.cash - left.cash || (originalOrder.get(left.playerId) ?? 0) - (originalOrder.get(right.playerId) ?? 0))
+            .map((standing, index) => ({ ...standing, rank: index + 1 }));
+    }
+
+    private endGame(player: EnginePlayer) {
+        if (this.phase === "lobby" || this.phase === "finished") return this.reject(player.id, "The game cannot be ended now");
+        if (player.id !== this.lobbyHostId) return this.reject(player.id, "Only the room host can end the game");
+        const standings = this.scoreFinalStandings();
+        const winner = standings[0];
+        if (!winner) return this.reject(player.id, "No players are available to score");
+        this.pendingLanding = null;
+        this.pendingTrade = null;
+        this.pendingAuction = null;
+        this.pausedPlayerId = null;
+        this.consecutiveDoubles = 0;
+        this.extraRollPending = false;
+        this.currentPlayerRemoved = false;
+        this.finalStandings = standings;
+        this.winnerId = winner.playerId;
+        this.phase = "finished";
+        this.turnRevision += 1;
+        this.history(`${player.username} ended the game. ${winner.username} won with a net worth of £${winner.netWorth}`);
+        this.emit({ type: "game-ended", winnerId: winner.playerId, standings });
+        this.publish();
+        return true;
+    }
+
     private endTurn() {
         this.pendingLanding = null;
         this.pendingAuction = null;
@@ -1001,6 +1085,7 @@ export class GameEngine {
     }
 
     private resolveWinner() {
+        if (this.phase === "finished") return;
         const solvent = this.order.map((id) => this.players.get(id)).filter((player): player is EnginePlayer => Boolean(player && player.balance >= 0));
         if (this.phase === "lobby") return;
         if (this.mode.WinningMode === "monopols & trains") {
