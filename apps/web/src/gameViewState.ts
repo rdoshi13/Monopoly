@@ -91,3 +91,57 @@ export function purchaseAvailability(game: GameSnapshot, playerId: string, posit
   if (player.balance < space.price) return { allowed: false, reason: `You need £${space.price} to buy this — auction it instead` };
   return { allowed: true };
 }
+
+export type DevelopmentIntent = "build" | "sell";
+export type DevelopmentConfirmation = {
+  position: number;
+  intent: DevelopmentIntent;
+  /** Printed house cost for this row: 50, 100, 150 or 200. */
+  houseCost: number;
+  /** Charged on a build, refunded on a sale — a sale always returns half. */
+  amount: number;
+  hotel: boolean;
+};
+
+/**
+ * Re-checks a build or sell against the live snapshot, mirroring
+ * `mortgageConfirmationProperty`, so a confirmation cannot outlive the state
+ * that made it legal.
+ */
+export function developmentConfirmation(game: GameSnapshot, playerId: string, position: number, intent: DevelopmentIntent, presentationBlocking: boolean): DevelopmentConfirmation | null {
+  if (presentationBlocking || game.pausedPlayerId !== null || game.currentPlayerId !== playerId || game.phase !== "awaiting-roll") return null;
+  const availability = intent === "build" ? buildAvailability(game, playerId, position) : sellAvailability(game, playerId, position);
+  if (!availability.allowed) return null;
+  const property = game.players.find((candidate) => candidate.id === playerId)?.properties.find((candidate) => candidate.posistion === position);
+  if (!property) return null;
+  const houseCost = houseCostByPosition.get(position) ?? 0;
+  return {
+    position,
+    intent,
+    houseCost,
+    amount: intent === "build" ? houseCost : Math.floor(houseCost / 2),
+    // A build at four houses produces the hotel; a sale at "h" removes one.
+    hotel: intent === "build" ? level(property.count) === 4 : property.count === "h",
+  };
+}
+
+/**
+ * Why mortgaging or redeeming is unavailable. Official rules forbid mortgaging
+ * while any property in the colour group carries buildings, so the button should
+ * say that rather than rejecting the click.
+ */
+export function mortgageAvailability(game: GameSnapshot, playerId: string, position: number): ActionAvailability {
+  const player = game.players.find((candidate) => candidate.id === playerId);
+  const property = player?.properties.find((candidate) => candidate.posistion === position);
+  const space = boardSpaces.find((candidate) => candidate.posistion === position);
+  if (!player || !property || !space || space.price === undefined) return { allowed: false, reason: "You do not own this property" };
+  if (!game.selectedMode.mortageAllowed) return { allowed: false, reason: "Mortgages are disabled in this mode" };
+  const value = Math.floor(space.price / 2);
+  if (property.mortgaged) {
+    const cost = value + Math.ceil(value / 10);
+    return player.balance < cost ? { allowed: false, reason: `You need £${cost} to redeem this` } : { allowed: true };
+  }
+  const owned = player.properties.filter((candidate) => candidate.group === property.group);
+  if (owned.some((candidate) => level(candidate.count) > 0)) return { allowed: false, reason: `Sell the buildings in the ${property.group} set first` };
+  return { allowed: true };
+}

@@ -276,3 +276,5 @@ button.coded-space.purchasable:focus-visible { z-index: 5; outline: 3px solid #c
 .dice-stale-label { display: block; font-size: .66rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #7d8a82; }
 
 .deed-buy-blocked { display: block; margin-top: .1rem; color: #8d2020; font-size: .82rem; text-align: center; }
+
+.development-rates { margin: .35rem 0 .1rem; color: #55625a; font-size: .84rem; }

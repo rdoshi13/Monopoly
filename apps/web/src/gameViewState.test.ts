@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GameSnapshot } from "@monopoly/game-engine";
-import { buildAvailability, compareBalances, landingPresentationKey, mortgageConfirmationProperty, purchaseAvailability, sellAvailability } from "./gameViewState";
+import { buildAvailability, compareBalances, developmentConfirmation, landingPresentationKey, mortgageAvailability, mortgageConfirmationProperty, purchaseAvailability, sellAvailability } from "./gameViewState";
 
 const mortgageGame = {
   currentPlayerId: "alice",
@@ -104,5 +104,54 @@ describe("purchase availability", () => {
 
   it("blocks spaces that are not for sale", () => {
     expect(purchaseAvailability(game(1000), "a", 20).allowed).toBe(false);
+  });
+});
+
+describe("development confirmation and mortgage gating", () => {
+  const base = { pausedPlayerId: null, currentPlayerId: "a", phase: "awaiting-roll", bankSupply: { houses: 32, hotels: 12 }, selectedMode: { mortageAllowed: true } };
+  const snap = (properties: unknown, balance = 1000, overrides = {}) =>
+    ({ ...base, ...overrides, players: [{ id: "a", balance, properties }] }) as unknown as GameSnapshot;
+  // Brown houses cost £50; Green cost £200.
+  const brownPair = (count: number | "h", other: number | "h" = count) => [
+    { posistion: 1, count, group: "Brown", mortgaged: false },
+    { posistion: 3, count: other, group: "Brown", mortgaged: false },
+  ];
+
+  it("quotes the row's house cost and the half refund", () => {
+    expect(developmentConfirmation(snap(brownPair(0)), "a", 1, "build", false)).toEqual({ position: 1, intent: "build", houseCost: 50, amount: 50, hotel: false });
+    expect(developmentConfirmation(snap(brownPair(1)), "a", 1, "sell", false)).toEqual({ position: 1, intent: "sell", houseCost: 50, amount: 25, hotel: false });
+    // Green is the £200 row.
+    const greens = [
+      { posistion: 31, count: 0 as const, group: "Green", mortgaged: false },
+      { posistion: 32, count: 0 as const, group: "Green", mortgaged: false },
+      { posistion: 34, count: 0 as const, group: "Green", mortgaged: false },
+    ];
+    expect(developmentConfirmation(snap(greens), "a", 31, "build", false)).toEqual({ position: 31, intent: "build", houseCost: 200, amount: 200, hotel: false });
+  });
+
+  it("flags the hotel step in both directions", () => {
+    expect(developmentConfirmation(snap(brownPair(4)), "a", 1, "build", false)?.hotel).toBe(true);
+    expect(developmentConfirmation(snap(brownPair("h")), "a", 1, "sell", false)?.hotel).toBe(true);
+  });
+
+  it("refuses a confirmation the live snapshot no longer permits", () => {
+    // Incomplete group, another player's turn, and a blocking presentation.
+    expect(developmentConfirmation(snap([brownPair(0)[0]]), "a", 1, "build", false)).toBeNull();
+    expect(developmentConfirmation(snap(brownPair(0)), "a", 1, "build", true)).toBeNull();
+    expect(developmentConfirmation(snap(brownPair(0), 1000, { currentPlayerId: "b" }), "a", 1, "build", false)).toBeNull();
+  });
+
+  it("blocks mortgaging while the colour group carries buildings", () => {
+    // Official rule: no property in the group may be mortgaged while any of it is built up.
+    expect(mortgageAvailability(snap(brownPair(0, 1)), "a", 1)).toEqual({ allowed: false, reason: "Sell the buildings in the Brown set first" });
+    expect(mortgageAvailability(snap(brownPair(0)), "a", 1)).toEqual({ allowed: true });
+  });
+
+  it("blocks redeeming without the fee and respects a mode without mortgages", () => {
+    const mortgagedBrown = [{ posistion: 1, count: 0 as const, group: "Brown", mortgaged: true }];
+    // Old Kent Road is £60: mortgage value £30, redemption £33.
+    expect(mortgageAvailability(snap(mortgagedBrown, 32), "a", 1)).toEqual({ allowed: false, reason: "You need £33 to redeem this" });
+    expect(mortgageAvailability(snap(mortgagedBrown, 33), "a", 1)).toEqual({ allowed: true });
+    expect(mortgageAvailability(snap(brownPair(0), 1000, { selectedMode: { mortageAllowed: false } }), "a", 1).reason).toMatch(/disabled in this mode/);
   });
 });

@@ -57,6 +57,15 @@ pnpm build
 
 ### 2026-08-11 — Claude
 
+- Added: Building and selling a house now confirm on the deed card, matching the mortgage flow. The prompt states the amount for this action and a rates line giving both the row's house cost and the half refund — "Each house on Vine Street costs £100 and sells back for £50" — so the price is visible before committing. The hotel step is called out in both directions.
+- Added: `developmentConfirmation` re-checks the build or sell against the live snapshot on open and again on confirm, so a confirmation cannot outlive the state that made it legal. Same guard shape as `mortgageConfirmationProperty`.
+- Fixed: The Mortgage button is disabled while any property in the colour group carries buildings, with the reason "Sell the buildings in the <group> set first". Reported as "a property with a house cannot be mortgaged" — that restriction is the official rule and the engine was right to enforce it, so the fix is to surface it on the button instead of rejecting the click. Redeem is likewise disabled when the 10% fee is unaffordable, and both are disabled in a mode without mortgages.
+- Files: `apps/web/src/gameViewState.ts`, `apps/web/src/gameViewState.test.ts`, `apps/web/src/PropertyCard.tsx`, `apps/web/src/GameView.tsx`, and `apps/web/src/styles.css`.
+- Validation: 43 engine + 25 web + 10 Node + 10 Worker tests, type-check, web build. Verified live in Chrome: three £50 sales took Bob from £19 to £169 with the +£50 animation, a £100 build returned him to £69, and the Orange set then showed Build "Build evenly: develop the rest of the set first", Build "You need £100 to build here" on the undeveloped pair, and Mortgage "Sell the buildings in the Orange set first" on all three.
+- Decision: House-rule variants are not implemented. Mortgaging is blocked while the colour group is built up because that is the printed rule; changing it would be a deliberate divergence like the roll-phase restriction already recorded above.
+
+### 2026-08-11 — Claude
+
 - Fixed: The landing deed's Buy button is disabled when the player cannot afford the property, with the reason shown under the buttons and repeated as a tooltip. It was always enabled, so a player with £40 facing a £200 station could click Buy repeatedly and only ever get an "Insufficient funds" toast. Auction stays enabled because declining is always legal and is the only route when the cash is not there.
 - Changed: Initial dialog focus skips a disabled Buy and lands on Auction, so the deed still opens with a usable control focused.
 - Added: `purchaseAvailability` in `gameViewState.ts` with unit coverage, matching the existing `buildAvailability`/`sellAvailability` pattern and the engine's own affordability check.

@@ -6,7 +6,7 @@ import { PropertyCardModal } from "./PropertyCard";
 import { GameCardModal, type DrawnCardEvent } from "./GameCard";
 import { CodedBoard } from "./CodedBoard";
 import { isStreetGroup } from "./boardColors";
-import { buildAvailability, compareBalances, landingPresentationKey, mortgageConfirmationProperty, purchaseAvailability, sellAvailability } from "./gameViewState";
+import { buildAvailability, compareBalances, developmentConfirmation, landingPresentationKey, mortgageAvailability, mortgageConfirmationProperty, purchaseAvailability, sellAvailability, type DevelopmentIntent } from "./gameViewState";
 import { matchingSalaryPresentationId, readySalaryPresentations, type SalaryPresentation } from "./salaryPresentation";
 import { Toast } from "./Toast";
 import { EndGameDialog } from "./EndGameDialog";
@@ -162,6 +162,8 @@ export function GameView({ room, game, playerId, connection, error, events, pres
   const highlightTimer = useRef<number | null>(null);
   const mortgageDispatchPending = useRef(false);
   const endGameDispatchPending = useRef(false);
+  const developmentDispatchPending = useRef(false);
+  const [developmentIntent, setDevelopmentIntent] = useState<{ position: number; intent: DevelopmentIntent } | null>(null);
   const closePropertyCard = useCallback(() => setSelectedPropertyPosition(null), []);
   const closeEndGameConfirmation = useCallback(() => {
     endGameDispatchPending.current = false;
@@ -172,6 +174,14 @@ export function GameView({ room, game, playerId, connection, error, events, pres
     endGameDispatchPending.current = false;
     setEndGameDispatching(false);
     setEndGameConfirmationOpen(true);
+  }, []);
+  const closeDevelopmentConfirmation = useCallback(() => {
+    developmentDispatchPending.current = false;
+    setDevelopmentIntent(null);
+  }, []);
+  const openDevelopmentConfirmation = useCallback((position: number, intent: DevelopmentIntent) => {
+    developmentDispatchPending.current = false;
+    setDevelopmentIntent({ position, intent });
   }, []);
   const closeMortgageConfirmation = useCallback(() => {
     mortgageDispatchPending.current = false;
@@ -353,6 +363,22 @@ export function GameView({ room, game, playerId, connection, error, events, pres
   useEffect(() => {
     if (mortgageConfirmationPosition !== null && !mortgageConfirmationEligible) closeMortgageConfirmation();
   }, [mortgageConfirmationPosition, mortgageConfirmationEligible, closeMortgageConfirmation]);
+  const pendingDevelopment = developmentIntent === null ? null : developmentConfirmation(game, playerId, developmentIntent.position, developmentIntent.intent, presentationBusy);
+  const developmentEligible = pendingDevelopment !== null;
+  useEffect(() => {
+    if (developmentIntent !== null && !developmentEligible) closeDevelopmentConfirmation();
+  }, [developmentIntent, developmentEligible, closeDevelopmentConfirmation]);
+  const confirmDevelopment = useCallback(() => {
+    if (developmentIntent === null || developmentDispatchPending.current) return;
+    const live = developmentConfirmation(game, playerId, developmentIntent.position, developmentIntent.intent, presentationBusy);
+    if (!live) {
+      closeDevelopmentConfirmation();
+      return;
+    }
+    developmentDispatchPending.current = true;
+    send({ type: live.intent === "build" ? "build" : "sell-building", position: live.position });
+    setDevelopmentIntent(null);
+  }, [developmentIntent, game, playerId, presentationBusy, closeDevelopmentConfirmation, send]);
   const confirmMortgage = useCallback(() => {
     if (mortgageConfirmationPosition === null || mortgageDispatchPending.current) return;
     const liveProperty = mortgageConfirmationProperty(game, playerId, mortgageConfirmationPosition, presentationBusy);
@@ -368,7 +394,7 @@ export function GameView({ room, game, playerId, connection, error, events, pres
   // is per landing, so the next one reopens it rather than staying hidden.
   const landingKey = landingPresentationKey(game.pendingLanding, game.turnRevision);
   const landingPropertyPosition = game.phase === "awaiting-landing" && landingKey !== null && dismissedLanding !== landingKey ? game.pendingLanding?.position ?? null : null;
-  const displayedPropertyPosition = presentationBusy ? null : landingPropertyPosition ?? pendingMortgageProperty?.posistion ?? selectedPropertyPosition;
+  const displayedPropertyPosition = presentationBusy ? null : landingPropertyPosition ?? pendingDevelopment?.position ?? pendingMortgageProperty?.posistion ?? selectedPropertyPosition;
   const selectedPropertySpace = displayedPropertyPosition === null ? undefined : spaceByPosition.get(displayedPropertyPosition);
   const selectedPropertyOwner = displayedPropertyPosition === null ? undefined : game.players.find((player) => player.properties.some((property) => property.posistion === displayedPropertyPosition));
   const selectedPropertyState = selectedPropertyOwner?.properties.find((property) => property.posistion === displayedPropertyPosition);
@@ -402,14 +428,15 @@ export function GameView({ room, game, playerId, connection, error, events, pres
           const street = isStreetGroup(property.group);
           const build = buildAvailability(game, playerId, property.posistion);
           const sell = sellAvailability(game, playerId, property.posistion);
-          return <li key={property.posistion}><span><strong>{propertyName(property.posistion)}</strong><small>{street ? property.count === "h" ? "Hotel" : `${property.count} ${property.count === 1 ? "house" : "houses"}` : property.group === "Railroad" ? "Station" : "Utility"}{property.mortgaged ? " · Mortgaged" : ""}</small></span>{!presentationBusy && myTurn && game.phase === "awaiting-roll" && <span className="mini-actions">{street && <><button disabled={!build.allowed} title={build.reason} onClick={() => send({ type: "build", position: property.posistion })}>Build</button><button disabled={!sell.allowed} title={sell.reason} onClick={() => send({ type: "sell-building", position: property.posistion })}>Sell</button></>}<button onClick={() => property.mortgaged ? send({ type: "unmortgage", position: property.posistion }) : openMortgageConfirmation(property.posistion)}>{property.mortgaged ? "Redeem" : "Mortgage"}</button></span>}</li>;
+          const mortgage = mortgageAvailability(game, playerId, property.posistion);
+          return <li key={property.posistion}><span><strong>{propertyName(property.posistion)}</strong><small>{street ? property.count === "h" ? "Hotel" : `${property.count} ${property.count === 1 ? "house" : "houses"}` : property.group === "Railroad" ? "Station" : "Utility"}{property.mortgaged ? " · Mortgaged" : ""}</small></span>{!presentationBusy && myTurn && game.phase === "awaiting-roll" && <span className="mini-actions">{street && <><button disabled={!build.allowed} title={build.reason} onClick={() => openDevelopmentConfirmation(property.posistion, "build")}>Build</button><button disabled={!sell.allowed} title={sell.reason} onClick={() => openDevelopmentConfirmation(property.posistion, "sell")}>Sell</button></>}<button disabled={!mortgage.allowed} title={mortgage.reason} onClick={() => property.mortgaged ? send({ type: "unmortgage", position: property.posistion }) : openMortgageConfirmation(property.posistion)}>{property.mortgaged ? "Redeem" : "Mortgage"}</button></span>}</li>;
         })}</ul> : <p className="muted">No properties yet.</p>}<small className="muted">Bank: {game.bankSupply.houses} houses · {game.bankSupply.hotels} hotels</small></section>
         <TradePanel game={game} playerId={playerId} send={send} interactionLocked={presentationBusy} />
         <section className="panel events"><h3>Game events</h3>{events.length ? <ol>{events.map((event) => <li key={event.id}>{event.playerId ? `${game.players.find((player) => player.id === event.playerId)?.username ?? "A player"} ${event.text}` : event.text}</li>)}</ol> : <p className="muted">Rolls, cards and payments will appear here.</p>}</section>
       </aside>
     </div>
     {rollPresentation?.phase === "double" && <div className="roll-announcement" role="status"><strong>{rollingPlayerName} rolled a double!</strong><span>Another roll follows this move.</span></div>}
-    {cardPresentation?.phase === "card" ? <GameCardModal event={cardPresentation.result} playerName={cardPlayerName} onClose={continueCardPresentation} /> : selectedPropertySpace && <PropertyCardModal space={selectedPropertySpace} ownerName={selectedPropertyOwner?.username} mortgaged={selectedPropertyState?.mortgaged} development={selectedPropertyState?.count} sourcePosition={landingPropertyPosition ?? undefined} balance={me?.balance} onClose={landingPropertyPosition !== null ? myTurn ? undefined : () => setDismissedLanding(landingKey) : pendingMortgageProperty ? closeMortgageConfirmation : closePropertyCard} actions={landingPropertyPosition !== null && myTurn ? { onBuy: () => send({ type: "landing", decision: "buy" }), onAuction: () => send({ type: "landing", decision: "skip" }), buy: purchaseAvailability(game, playerId, landingPropertyPosition) } : undefined} mortgageConfirmation={landingPropertyPosition === null && pendingMortgageProperty ? { onConfirm: confirmMortgage, onCancel: closeMortgageConfirmation } : undefined} />}
+    {cardPresentation?.phase === "card" ? <GameCardModal event={cardPresentation.result} playerName={cardPlayerName} onClose={continueCardPresentation} /> : selectedPropertySpace && <PropertyCardModal space={selectedPropertySpace} ownerName={selectedPropertyOwner?.username} mortgaged={selectedPropertyState?.mortgaged} development={selectedPropertyState?.count} sourcePosition={landingPropertyPosition ?? undefined} balance={me?.balance} onClose={landingPropertyPosition !== null ? myTurn ? undefined : () => setDismissedLanding(landingKey) : pendingDevelopment ? closeDevelopmentConfirmation : pendingMortgageProperty ? closeMortgageConfirmation : closePropertyCard} actions={landingPropertyPosition !== null && myTurn ? { onBuy: () => send({ type: "landing", decision: "buy" }), onAuction: () => send({ type: "landing", decision: "skip" }), buy: purchaseAvailability(game, playerId, landingPropertyPosition) } : undefined} mortgageConfirmation={landingPropertyPosition === null && !pendingDevelopment && pendingMortgageProperty ? { onConfirm: confirmMortgage, onCancel: closeMortgageConfirmation } : undefined} developmentConfirmation={landingPropertyPosition === null && pendingDevelopment ? { intent: pendingDevelopment.intent, amount: pendingDevelopment.amount, houseCost: pendingDevelopment.houseCost, hotel: pendingDevelopment.hotel, onConfirm: confirmDevelopment, onCancel: closeDevelopmentConfirmation } : undefined} />}
     {endGameConfirmationOpen && endGameEligible && <EndGameDialog dispatching={endGameDispatching} onConfirm={confirmEndGame} onClose={closeEndGameConfirmation} />}
   </main>;
 }
