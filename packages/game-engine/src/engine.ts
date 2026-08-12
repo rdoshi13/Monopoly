@@ -82,9 +82,12 @@ export interface TradeOffer {
  */
 export interface PendingDebt {
     playerId: string;
+    /** Total still owed; for a split debt this is the sum of every share. */
     amount: number;
     /** null means the debt is owed to the bank. */
     creditorId: string | null;
+    /** Set when one obligation is owed to several players at once. */
+    shares?: Array<{ creditorId: string; amount: number }>;
     reason: string;
     label?: string;
 }
@@ -874,8 +877,19 @@ export class GameEngine {
                 if (card.subaction === "getout") player.getoutCards += 1;
                 else this.sendToJail(player);
                 break;
-            case "removefundstoplayers": for (const other of [...this.players.values()]) if (other.id !== player.id && this.players.has(player.id) && !this.transfer(player, other, card.amount ?? 0, "card payment", `${player.username} paid ${other.username} £${card.amount ?? 0} for ${cardReason(card)}`)) break; break;
-            case "addfundsfromplayers": for (const other of [...this.players.values()]) if (other.id !== player.id && this.players.has(other.id)) this.transfer(other, player, card.amount ?? 0, "card payment", `${other.username} paid ${player.username} £${card.amount ?? 0} for ${cardReason(card)}`); break;
+            case "removefundstoplayers": this.payEveryPlayer(player, card); break;
+            case "addfundsfromplayers": {
+                // Solvent payers settle immediately; the first who cannot enters a
+                // settlement, and we stop so their debt is not overwritten.
+                const amount = card.amount ?? 0;
+                const payers = [...this.players.values()].filter((other) => other.id !== player.id);
+                for (const other of payers.filter((candidate) => candidate.balance >= amount)) {
+                    this.transfer(other, player, amount, "card payment", `${other.username} paid ${player.username} £${amount} for ${cardReason(card)}`);
+                }
+                const short = payers.find((candidate) => candidate.balance < amount);
+                if (short) this.transfer(short, player, amount, "card payment", `${short.username} paid ${player.username} £${amount} for ${cardReason(card)}`);
+                break;
+            }
             case "move":
                 this.moveByCard(player, card);
                 return this.resolveSpace(player, rollTotal);
@@ -978,12 +992,29 @@ export class GameEngine {
     }
 
     /**
+     * "Pay each player" is a single obligation. Charging it one creditor at a time
+     * let a shortfall abandon the rest, so the total is checked up front and either
+     * paid in full or carried into one settlement that distributes on completion.
+     */
+    private payEveryPlayer(player: EnginePlayer, card: Card) {
+        const each = card.amount ?? 0;
+        const others = [...this.players.values()].filter((other) => other.id !== player.id);
+        if (each <= 0 || others.length === 0) return true;
+        const total = each * others.length;
+        if (player.balance >= total) {
+            for (const other of others) this.transfer(player, other, each, "card payment", `${player.username} paid ${other.username} £${each} for ${cardReason(card)}`);
+            return true;
+        }
+        return this.openSettlement(player, total, undefined, cardReason(card), undefined, others.map((other) => ({ creditorId: other.id, amount: each })));
+    }
+
+    /**
      * Pauses play on the debtor. Returns false so the interrupted flow stops; the
      * turn is resumed by `settleDebt` or ended by bankruptcy. Trading can bring in
      * money the debtor cannot raise alone, so this never pre-judges bankruptcy.
      */
-    private openSettlement(debtor: EnginePlayer, amount: number, creditor: EnginePlayer | undefined, reason: string, label?: string) {
-        this.pendingDebt = { playerId: debtor.id, amount, creditorId: creditor?.id ?? null, reason, ...(label ? { label } : {}) };
+    private openSettlement(debtor: EnginePlayer, amount: number, creditor: EnginePlayer | undefined, reason: string, label?: string, shares?: Array<{ creditorId: string; amount: number }>) {
+        this.pendingDebt = { playerId: debtor.id, amount, creditorId: creditor?.id ?? null, reason, ...(label ? { label } : {}), ...(shares ? { shares } : {}) };
         this.phase = "awaiting-settlement";
         this.turnRevision += 1;
         this.history(`${debtor.username} owes £${amount} for ${reason} and must raise £${amount - debtor.balance} more`);
@@ -1001,10 +1032,18 @@ export class GameEngine {
         if (!debt) return;
         const debtor = this.players.get(debt.playerId);
         if (!debtor || debtor.balance < debt.amount) return;
-        const creditor = debt.creditorId ? this.players.get(debt.creditorId) : undefined;
         debtor.balance -= debt.amount;
-        if (creditor) creditor.balance += debt.amount;
-        this.history(debt.label ?? `${debtor.username} paid £${debt.amount} for ${debt.reason}`);
+        if (debt.shares) {
+            for (const share of debt.shares) {
+                const creditor = this.players.get(share.creditorId);
+                if (creditor) creditor.balance += share.amount;
+                this.history(`${debtor.username} paid ${creditor?.username ?? "a player"} £${share.amount} for ${debt.reason}`);
+            }
+        } else {
+            const creditor = debt.creditorId ? this.players.get(debt.creditorId) : undefined;
+            if (creditor) creditor.balance += debt.amount;
+            this.history(debt.label ?? `${debtor.username} paid £${debt.amount} for ${debt.reason}`);
+        }
         this.pendingDebt = null;
         this.phase = "awaiting-roll";
         this.endTurn();
@@ -1013,12 +1052,32 @@ export class GameEngine {
     private declareBankruptcy(player: EnginePlayer) {
         const debt = this.pendingDebt;
         if (!debt || !this.isSettling(player)) return this.reject(player.id, "You have no debt to settle");
-        const creditor = debt.creditorId ? this.players.get(debt.creditorId) : undefined;
+        this.bankruptFor(debt, player);
+        return true;
+    }
+
+    /**
+     * Retires the debtor. A debt split across several players has no single
+     * creditor to inherit the estate, so the cash on hand is shared out as far as
+     * it goes and the properties return to the bank.
+     */
+    private bankruptFor(debt: PendingDebt, debtor: EnginePlayer) {
         this.pendingDebt = null;
         this.phase = "awaiting-roll";
-        this.bankrupt(player, creditor, debt.reason);
+        if (debt.shares) {
+            for (const share of debt.shares) {
+                const paid = Math.min(share.amount, debtor.balance);
+                if (paid <= 0) break;
+                const creditor = this.players.get(share.creditorId);
+                debtor.balance -= paid;
+                if (creditor) creditor.balance += paid;
+                this.history(`${debtor.username} paid ${creditor?.username ?? "a player"} £${paid} of £${share.amount} for ${debt.reason}`);
+            }
+            this.bankrupt(debtor, undefined, debt.reason);
+        } else {
+            this.bankrupt(debtor, debt.creditorId ? this.players.get(debt.creditorId) : undefined, debt.reason);
+        }
         this.endTurn();
-        return true;
     }
 
     /** Deadline backstop: liquidate what we can, then bankrupt if still short. */
@@ -1038,11 +1097,7 @@ export class GameEngine {
             this.settleDebtIfPossible();
             return;
         }
-        const creditor = debt.creditorId ? this.players.get(debt.creditorId) : undefined;
-        this.pendingDebt = null;
-        this.phase = "awaiting-roll";
-        this.bankrupt(debtor, creditor, debt.reason);
-        this.endTurn();
+        this.bankruptFor(debt, debtor);
     }
 
     /**

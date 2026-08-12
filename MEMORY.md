@@ -59,6 +59,14 @@ pnpm build
 
 ### 2026-08-12 — Claude
 
+- Fixed: "Pay each player" is charged as one obligation. It paid creditors one at a time and abandoned the rest at the first shortfall, so with three players a payer holding £60 paid the first £50 and the second player silently got nothing. The total is now checked up front and either paid in full or carried into a single settlement that distributes to every creditor on completion.
+- Fixed: A second short payer can no longer overwrite the first player's pending debt. "Collect from every player" settles the solvent payers first and then opens at most one settlement, so a debt cannot be lost by being replaced.
+- Added: `PendingDebt.shares` records who is owed what when one obligation covers several creditors. On bankruptcy against a split debt the cash on hand is shared out in order as far as it goes and the properties return to the bank, since no single creditor can inherit the estate.
+- Files: `packages/game-engine/src/engine.ts` and `packages/game-engine/test/engine.test.ts`.
+- Validation: 54 engine + 25 web + 10 Node + 10 Worker tests, per-package type-check, web build, Worker dry-run. New coverage asserts the affordable path pays both creditors, the unaffordable path opens one £100 settlement with both shares and pays nobody early, settlement distributes to both, bankruptcy splits £60 as £50 and £10, and two broke payers yield exactly one debt.
+
+### 2026-08-12 — Claude
+
 - Added: Player-driven insolvency. An unpayable debt now opens `awaiting-settlement` on the debtor with the amount, the shortfall, and the routes out, replacing the automatic sell-and-mortgage that gave the player no say. They may sell buildings, mortgage, or trade; the debt settles the instant they can cover it and play resumes. Building and redeeming are barred while settling because both spend money.
 - Added: `declare-bankruptcy`, available only to the debtor while a debt stands. Bankruptcy is no longer automatic.
 - Added: A 120-second settlement deadline that falls back to the old `raiseCash` liquidation and then bankruptcy, so a stalled or absent debtor cannot freeze the room.
@@ -67,7 +75,7 @@ pnpm build
 - Files: `packages/game-engine/src/engine.ts`, `packages/game-engine/test/engine.test.ts`, `apps/web/src/gameViewState.ts`, `apps/web/src/GameView.tsx`, and `apps/web/src/styles.css`.
 - Validation: 49 engine + 25 web + 10 Node + 10 Worker tests, per-package type-check, web build, Worker dry-run. Two existing tests were rewritten because the behaviour changed on purpose: the forced-sale test now asserts the pause and player-driven settlement, and the bankruptcy test now declares it. Verified live in Chrome through the Node server: Alice at £10 landing on Fleet Street produced "You owe £18 for rent for Fleet Street / You need £8 more", Bob saw "Play is paused while they raise the money" with his roll withdrawn, and a £50-for-£10 trade cleared the debt and resumed play with "Alice paid Bob £18 rent for Fleet Street".
 - Gotcha: Node 26 dropped corepack and the Homebrew upgrade left `/opt/homebrew/bin/pnpm` dangling, so `pnpm` is unavailable. Run each package's own `node_modules/.bin/{tsc,vitest,vite,wrangler}` directly until pnpm is reinstalled.
-- Known limitation: a card that pays every player still stops at the first shortfall, so later creditors go unpaid in that case. Pre-existing behaviour, unchanged by this work.
+- Known limitation (fixed 2026-08-12): a card that pays every player stopped at the first shortfall, leaving later creditors unpaid.
 
 ### 2026-08-11 — Claude
 

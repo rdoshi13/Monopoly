@@ -954,3 +954,85 @@ describe("jail cards in trades", () => {
         expect(lines).toContain("Alice gave 1 Get Out of Jail Free card to Bob for £75");
     });
 });
+
+describe("paying every player", () => {
+    /** Three players so "pay each player" has two creditors. */
+    function trio(startingCash: number) {
+        const engine = game();
+        engine.connect("a", "Alice");
+        engine.connect("b", "Bob");
+        engine.connect("c", "Carol");
+        engine.handle("a", { type: "ready", ready: true });
+        engine.handle("b", { type: "ready", ready: true });
+        engine.handle("c", { type: "ready", ready: true });
+        const internal = engine as unknown as { players: Map<string, { balance: number }> };
+        internal.players.get("a")!.balance = startingCash;
+        const chairman = (board.chance as Array<{ action: string; amount?: number; title: string }>).find((card) => card.action === "removefundstoplayers")!;
+        return { engine, internal, chairman, pay: () => (engine as unknown as { payEveryPlayer(p: unknown, c: unknown): boolean }).payEveryPlayer(internal.players.get("a"), chairman) };
+    }
+
+    it("pays every player when the total is affordable", () => {
+        const { engine, pay } = trio(500);
+        expect(pay()).toBe(true);
+        expect(player(engine, "a").balance).toBe(400);
+        expect(player(engine, "b").balance).toBe(1550);
+        expect(player(engine, "c").balance).toBe(1550);
+        expect(engine.snapshot().pendingDebt).toBeNull();
+    });
+
+    it("carries the whole obligation into one settlement rather than skipping a creditor", () => {
+        // £60 covers the first £50 but not both, which previously abandoned the second.
+        const { engine, pay } = trio(60);
+        expect(pay()).toBe(false);
+        expect(engine.snapshot().pendingDebt).toMatchObject({ playerId: "a", amount: 100, creditorId: null, shares: [{ creditorId: "b", amount: 50 }, { creditorId: "c", amount: 50 }] });
+        // Nobody is paid until the full amount is available.
+        expect(player(engine, "b").balance).toBe(1500);
+        expect(player(engine, "c").balance).toBe(1500);
+    });
+
+    it("distributes to both creditors once the debt is settled", () => {
+        const { engine, internal, pay } = trio(60);
+        pay();
+        internal.players.get("a")!.balance = 100;
+        (engine as unknown as { settleDebtIfPossible(): void }).settleDebtIfPossible();
+        expect(engine.snapshot().pendingDebt).toBeNull();
+        expect(player(engine, "a").balance).toBe(0);
+        expect(player(engine, "b").balance).toBe(1550);
+        expect(player(engine, "c").balance).toBe(1550);
+    });
+
+    it("shares out the available cash when the debtor goes bankrupt owing several players", () => {
+        const { engine, pay } = trio(60);
+        pay();
+        expect(engine.handle("a", { type: "declare-bankruptcy" })).toBe(true);
+        // £60 covers Bob's £50 in full and leaves £10 towards Carol's share.
+        expect(player(engine, "b").balance).toBe(1550);
+        expect(player(engine, "c").balance).toBe(1510);
+        expect(engine.snapshot().players.map((candidate) => candidate.id)).not.toContain("a");
+    });
+
+    it("does not let a second short payer overwrite the first player's debt", () => {
+        const engine = game();
+        engine.connect("a", "Alice");
+        engine.connect("b", "Bob");
+        engine.connect("c", "Carol");
+        engine.handle("a", { type: "ready", ready: true });
+        engine.handle("b", { type: "ready", ready: true });
+        engine.handle("c", { type: "ready", ready: true });
+        const internal = engine as unknown as { players: Map<string, { balance: number; position: number }>; cardDecks: Record<string, { remaining: number[]; discard: number[] }> };
+        // Both other players are broke, so both owe the Birthday collection.
+        internal.players.get("b")!.balance = 0;
+        internal.players.get("c")!.balance = 0;
+        const birthdayIndex = (board.communitychest as Array<{ action: string }>).findIndex((card) => card.action === "addfundsfromplayers");
+        internal.cardDecks.communitychest = { remaining: [birthdayIndex], discard: [] };
+        // A default roll of 1 + 1 from Go lands on the Community Chest at space 2.
+        internal.players.get("a")!.position = 0;
+        expect(engine.handle("a", { type: "roll" })).toBe(true);
+
+        // Exactly one settlement stands, and it belongs to a real debtor.
+        const debt = engine.snapshot().pendingDebt;
+        expect(debt).not.toBeNull();
+        expect(["b", "c"]).toContain(debt!.playerId);
+        expect(debt!.amount).toBe(10);
+    });
+});
