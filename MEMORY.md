@@ -57,6 +57,14 @@ pnpm build
 
 ### 2026-08-11 — Claude
 
+- Fixed: The landing deed's Buy button is disabled when the player cannot afford the property, with the reason shown under the buttons and repeated as a tooltip. It was always enabled, so a player with £40 facing a £200 station could click Buy repeatedly and only ever get an "Insufficient funds" toast. Auction stays enabled because declining is always legal and is the only route when the cash is not there.
+- Changed: Initial dialog focus skips a disabled Buy and lands on Auction, so the deed still opens with a usable control focused.
+- Added: `purchaseAvailability` in `gameViewState.ts` with unit coverage, matching the existing `buildAvailability`/`sellAvailability` pattern and the engine's own affordability check.
+- Files: `apps/web/src/gameViewState.ts`, `apps/web/src/gameViewState.test.ts`, `apps/web/src/PropertyCard.tsx`, `apps/web/src/GameView.tsx`, and `apps/web/src/styles.css`.
+- Validation: 43 engine + 20 web + 10 Node + 10 Worker tests, type-check, web build. Confirmed live in Chrome: a player with £19 landing on Fleet Street (£220) saw Buy disabled with "You need £220 to buy this — auction it instead" and focus on Auction.
+
+### 2026-08-11 — Claude
+
 - Fixed: Build and Sell are disabled with the reason in a tooltip when the action cannot succeed. They were always enabled, so the only way to learn the complete-set, even-development, mortgage, cash or bank-stock rules was to click and read an error toast. `buildAvailability` and `sellAvailability` in `gameViewState.ts` carry the logic with unit coverage for every branch.
 - Fixed: Stations and utilities no longer read "0 houses"; they show "Station" or "Utility".
 - Fixed: A jailed player's card said "Jail / Just Visiting · Jail". It now reads "In jail".

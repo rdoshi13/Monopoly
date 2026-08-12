@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GameSnapshot } from "@monopoly/game-engine";
-import { compareBalances, landingPresentationKey, mortgageConfirmationProperty, buildAvailability, sellAvailability } from "./gameViewState";
+import { buildAvailability, compareBalances, landingPresentationKey, mortgageConfirmationProperty, purchaseAvailability, sellAvailability } from "./gameViewState";
 
 const mortgageGame = {
   currentPlayerId: "alice",
@@ -85,5 +85,24 @@ describe("development availability", () => {
     expect(sellAvailability(game, "a", 1)).toEqual({ allowed: true });
     expect(sellAvailability(game, "a", 3)).toEqual({ allowed: false, reason: "Sell evenly: take from the most developed property first" });
     expect(sellAvailability(snapshot([{ id: "a", balance: 1, properties: [brown(0)] }]), "a", 1).reason).toBe("Nothing built here");
+  });
+});
+
+describe("purchase availability", () => {
+  const game = (balance: number) => ({ players: [{ id: "a", balance, properties: [] }], bankSupply: { houses: 32, hotels: 12 } } as unknown as Parameters<typeof purchaseAvailability>[0]);
+
+  it("allows a purchase the player can afford", () => {
+    // Old Kent Road is £60.
+    expect(purchaseAvailability(game(60), "a", 1)).toEqual({ allowed: true });
+  });
+
+  it("blocks a purchase the player cannot afford and points at the auction", () => {
+    expect(purchaseAvailability(game(59), "a", 1)).toEqual({ allowed: false, reason: "You need £60 to buy this — auction it instead" });
+    // Fenchurch St. Station is £200 — the case seen with £40 in hand.
+    expect(purchaseAvailability(game(40), "a", 25)).toEqual({ allowed: false, reason: "You need £200 to buy this — auction it instead" });
+  });
+
+  it("blocks spaces that are not for sale", () => {
+    expect(purchaseAvailability(game(1000), "a", 20).allowed).toBe(false);
   });
 });

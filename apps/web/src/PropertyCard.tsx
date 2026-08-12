@@ -12,7 +12,7 @@ interface PropertyCardModalProps {
   onClose?: () => void;
   /** Shown beside Buy/Auction so the decision does not require looking away. */
   balance?: number;
-  actions?: { onBuy: () => void; onAuction: () => void };
+  actions?: { onBuy: () => void; onAuction: () => void; buy?: { allowed: boolean; reason?: string } };
   mortgageConfirmation?: { onConfirm: () => void; onCancel: () => void };
 }
 
@@ -73,6 +73,7 @@ function UtilityDetails({ space }: { space: BoardSpace }) {
 export function PropertyCardModal({ space, ownerName, mortgaged = false, development = 0, sourcePosition, onClose, balance, actions, mortgageConfirmation }: PropertyCardModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const buyButtonRef = useRef<HTMLButtonElement>(null);
+  const auctionButtonRef = useRef<HTMLButtonElement>(null);
   const confirmMortgageButtonRef = useRef<HTMLButtonElement>(null);
   const cardRef = useRef<HTMLElement>(null);
   const hasActions = actions !== undefined;
@@ -93,7 +94,8 @@ export function PropertyCardModal({ space, ownerName, mortgaged = false, develop
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose?.(); };
     if (onClose) document.addEventListener("keydown", onKeyDown);
-    (confirmMortgageButtonRef.current ?? closeButtonRef.current ?? buyButtonRef.current ?? cardRef.current)?.focus();
+    const buyFocusable = buyButtonRef.current && !buyButtonRef.current.disabled ? buyButtonRef.current : null;
+    (confirmMortgageButtonRef.current ?? closeButtonRef.current ?? buyFocusable ?? auctionButtonRef.current ?? cardRef.current)?.focus();
     return () => {
       if (onClose) document.removeEventListener("keydown", onKeyDown);
       previousFocus?.focus();
@@ -113,7 +115,7 @@ export function PropertyCardModal({ space, ownerName, mortgaged = false, develop
         <span className={`mortgage-value-row${mortgageConfirmation ? " confirming" : ""}`}>Mortgage value <strong>£{mortgageValue}</strong></span>
       </div>
       <footer className="deed-price"><span>Purchase price</span><strong>£{space.price ?? 0}</strong></footer>
-      {actions && <div className="deed-actions">{balance !== undefined && <span className="deed-balance">Your balance <strong>£{balance}</strong></span>}<div className="deed-action-buttons"><button className="primary" type="button" onClick={actions.onBuy} ref={buyButtonRef}>Buy</button><button className="secondary" type="button" onClick={actions.onAuction}>Auction</button></div></div>}
+      {actions && <div className="deed-actions">{balance !== undefined && <span className="deed-balance">Your balance <strong>£{balance}</strong></span>}<div className="deed-action-buttons"><button className="primary" type="button" disabled={actions.buy?.allowed === false} title={actions.buy?.reason} onClick={actions.onBuy} ref={buyButtonRef}>Buy</button><button className="secondary" type="button" onClick={actions.onAuction} ref={auctionButtonRef}>Auction</button></div>{actions.buy?.allowed === false && actions.buy.reason && <span className="deed-buy-blocked">{actions.buy.reason}</span>}</div>}
       {mortgageConfirmation && <div className="deed-actions deed-confirmation"><p id="mortgage-confirmation-prompt">Mortgage this property for <strong>£{mortgageValue}</strong>?</p><div className="deed-action-buttons"><button className="primary" type="button" onClick={mortgageConfirmation.onConfirm} ref={confirmMortgageButtonRef}>Confirm mortgage</button><button className="secondary" type="button" onClick={mortgageConfirmation.onCancel}>Cancel</button></div></div>}
     </section>
   </div>;

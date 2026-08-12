@@ -6,7 +6,7 @@ import { PropertyCardModal } from "./PropertyCard";
 import { GameCardModal, type DrawnCardEvent } from "./GameCard";
 import { CodedBoard } from "./CodedBoard";
 import { isStreetGroup } from "./boardColors";
-import { buildAvailability, compareBalances, landingPresentationKey, mortgageConfirmationProperty, sellAvailability } from "./gameViewState";
+import { buildAvailability, compareBalances, landingPresentationKey, mortgageConfirmationProperty, purchaseAvailability, sellAvailability } from "./gameViewState";
 import { matchingSalaryPresentationId, readySalaryPresentations, type SalaryPresentation } from "./salaryPresentation";
 import { Toast } from "./Toast";
 import { EndGameDialog } from "./EndGameDialog";
@@ -409,7 +409,7 @@ export function GameView({ room, game, playerId, connection, error, events, pres
       </aside>
     </div>
     {rollPresentation?.phase === "double" && <div className="roll-announcement" role="status"><strong>{rollingPlayerName} rolled a double!</strong><span>Another roll follows this move.</span></div>}
-    {cardPresentation?.phase === "card" ? <GameCardModal event={cardPresentation.result} playerName={cardPlayerName} onClose={continueCardPresentation} /> : selectedPropertySpace && <PropertyCardModal space={selectedPropertySpace} ownerName={selectedPropertyOwner?.username} mortgaged={selectedPropertyState?.mortgaged} development={selectedPropertyState?.count} sourcePosition={landingPropertyPosition ?? undefined} balance={me?.balance} onClose={landingPropertyPosition !== null ? myTurn ? undefined : () => setDismissedLanding(landingKey) : pendingMortgageProperty ? closeMortgageConfirmation : closePropertyCard} actions={landingPropertyPosition !== null && myTurn ? { onBuy: () => send({ type: "landing", decision: "buy" }), onAuction: () => send({ type: "landing", decision: "skip" }) } : undefined} mortgageConfirmation={landingPropertyPosition === null && pendingMortgageProperty ? { onConfirm: confirmMortgage, onCancel: closeMortgageConfirmation } : undefined} />}
+    {cardPresentation?.phase === "card" ? <GameCardModal event={cardPresentation.result} playerName={cardPlayerName} onClose={continueCardPresentation} /> : selectedPropertySpace && <PropertyCardModal space={selectedPropertySpace} ownerName={selectedPropertyOwner?.username} mortgaged={selectedPropertyState?.mortgaged} development={selectedPropertyState?.count} sourcePosition={landingPropertyPosition ?? undefined} balance={me?.balance} onClose={landingPropertyPosition !== null ? myTurn ? undefined : () => setDismissedLanding(landingKey) : pendingMortgageProperty ? closeMortgageConfirmation : closePropertyCard} actions={landingPropertyPosition !== null && myTurn ? { onBuy: () => send({ type: "landing", decision: "buy" }), onAuction: () => send({ type: "landing", decision: "skip" }), buy: purchaseAvailability(game, playerId, landingPropertyPosition) } : undefined} mortgageConfirmation={landingPropertyPosition === null && pendingMortgageProperty ? { onConfirm: confirmMortgage, onCancel: closeMortgageConfirmation } : undefined} />}
     {endGameConfirmationOpen && endGameEligible && <EndGameDialog dispatching={endGameDispatching} onConfirm={confirmEndGame} onClose={closeEndGameConfirmation} />}
   </main>;
 }

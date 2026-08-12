@@ -78,3 +78,16 @@ export function sellAvailability(game: GameSnapshot, playerId: string, position:
   if (property.count === "h" && game.bankSupply.houses < 4) return { allowed: false, reason: "The bank cannot exchange this hotel for four houses" };
   return { allowed: true };
 }
+
+/**
+ * The engine rejects an unaffordable purchase, so the deed's Buy button should
+ * say so rather than letting the player click into an error. Auction stays open:
+ * declining is always legal, and is the only route when the cash is not there.
+ */
+export function purchaseAvailability(game: GameSnapshot, playerId: string, position: number): ActionAvailability {
+  const player = game.players.find((candidate) => candidate.id === playerId);
+  const space = boardSpaces.find((candidate) => candidate.posistion === position);
+  if (!player || !space || space.price === undefined) return { allowed: false, reason: "This space cannot be bought" };
+  if (player.balance < space.price) return { allowed: false, reason: `You need £${space.price} to buy this — auction it instead` };
+  return { allowed: true };
+}
