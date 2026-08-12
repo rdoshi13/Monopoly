@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GameSnapshot } from "@monopoly/game-engine";
-import { compareBalances, landingPresentationKey, mortgageConfirmationProperty } from "./gameViewState";
+import { compareBalances, landingPresentationKey, mortgageConfirmationProperty, buildAvailability, sellAvailability } from "./gameViewState";
 
 const mortgageGame = {
   currentPlayerId: "alice",
@@ -42,5 +42,48 @@ describe("mortgageConfirmationProperty", () => {
     expect(mortgageConfirmationProperty(mortgageGame, "alice", 15, false)).toBeNull();
     expect(mortgageConfirmationProperty({ ...mortgageGame, players: [{ ...mortgageGame.players[0], properties: [{ ...mortgageGame.players[0].properties[0], mortgaged: true }] }, mortgageGame.players[1]] }, "alice", 5, false)).toBeNull();
     expect(mortgageConfirmationProperty(mortgageGame, "alice", 5, true)).toBeNull();
+  });
+});
+
+describe("development availability", () => {
+  const snapshot = (players: unknown, bank = { houses: 32, hotels: 12 }) => ({ players, bankSupply: bank } as unknown as Parameters<typeof buildAvailability>[0]);
+  const brown = (count: number | "h", mortgaged = false) => ({ posistion: 1, count, group: "Brown", mortgaged });
+  const brown3 = (count: number | "h", mortgaged = false) => ({ posistion: 3, count, group: "Brown", mortgaged });
+
+  it("blocks building on an incomplete colour group", () => {
+    const game = snapshot([{ id: "a", balance: 1000, properties: [brown(0)] }]);
+    expect(buildAvailability(game, "a", 1)).toEqual({ allowed: false, reason: "You need the complete Brown set to build" });
+  });
+
+  it("blocks building on a station", () => {
+    const game = snapshot([{ id: "a", balance: 1000, properties: [{ posistion: 5, count: 0, group: "Railroad", mortgaged: false }] }]);
+    expect(buildAvailability(game, "a", 5).allowed).toBe(false);
+  });
+
+  it("allows building on a complete group and then enforces even development", () => {
+    const complete = snapshot([{ id: "a", balance: 1000, properties: [brown(0), brown3(0)] }]);
+    expect(buildAvailability(complete, "a", 1)).toEqual({ allowed: true });
+    const uneven = snapshot([{ id: "a", balance: 1000, properties: [brown(1), brown3(0)] }]);
+    expect(buildAvailability(uneven, "a", 1)).toEqual({ allowed: false, reason: "Build evenly: develop the rest of the set first" });
+    expect(buildAvailability(uneven, "a", 3)).toEqual({ allowed: true });
+  });
+
+  it("blocks building without the cash or bank stock", () => {
+    expect(buildAvailability(snapshot([{ id: "a", balance: 10, properties: [brown(0), brown3(0)] }]), "a", 1))
+      .toEqual({ allowed: false, reason: "You need £50 to build here" });
+    expect(buildAvailability(snapshot([{ id: "a", balance: 1000, properties: [brown(0), brown3(0)] }], { houses: 0, hotels: 12 }), "a", 1))
+      .toEqual({ allowed: false, reason: "The bank has no houses left" });
+  });
+
+  it("blocks a mortgaged set and a completed hotel", () => {
+    expect(buildAvailability(snapshot([{ id: "a", balance: 1000, properties: [brown(0), brown3(0, true)] }]), "a", 1).reason).toMatch(/Redeem/);
+    expect(buildAvailability(snapshot([{ id: "a", balance: 1000, properties: [brown("h"), brown3("h")] }]), "a", 1).reason).toMatch(/hotel/);
+  });
+
+  it("only sells from the most developed property in the set", () => {
+    const game = snapshot([{ id: "a", balance: 1000, properties: [brown(2), brown3(1)] }]);
+    expect(sellAvailability(game, "a", 1)).toEqual({ allowed: true });
+    expect(sellAvailability(game, "a", 3)).toEqual({ allowed: false, reason: "Sell evenly: take from the most developed property first" });
+    expect(sellAvailability(snapshot([{ id: "a", balance: 1, properties: [brown(0)] }]), "a", 1).reason).toBe("Nothing built here");
   });
 });

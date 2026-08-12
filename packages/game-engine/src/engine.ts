@@ -122,7 +122,8 @@ export type GameAction =
     | { type: "trade-cancel" }
     | { type: "auction-bid"; amount: number }
     | { type: "auction-pass" }
-    | { type: "end-game" };
+    | { type: "end-game" }
+    | { type: "restart" };
 
 const modes: Record<ModeId, MonopolyMode> = {
     classic: MonopolyModes[0],
@@ -228,6 +229,7 @@ export function parseAction(value: unknown): GameAction | null {
                 : null;
         case "roll":
         case "end-game":
+        case "restart":
         case "trade-accept":
         case "trade-reject":
         case "trade-cancel":
@@ -369,6 +371,7 @@ export class GameEngine {
         const actor = this.players.get(actorId);
         if (!actor) return this.reject(actorId, "Unknown player");
         if (action.type === "end-game") return this.endGame(actor);
+        if (action.type === "restart") return this.restart(actor);
         if (this.pausedPlayerId) return this.reject(actorId, "Game is paused while a player reconnects");
         switch (action.type) {
             case "ready": return this.setReady(actor, action.ready);
@@ -479,10 +482,14 @@ export class GameEngine {
         if (player.isInJail) {
             this.consecutiveDoubles = 0;
             this.extraRollPending = false;
-            if (doubles) { player.isInJail = false; player.jailTurnsRemaining = 0; }
-            else {
+            if (doubles) {
+                player.isInJail = false;
+                player.jailTurnsRemaining = 0;
+                this.history(`${player.username} rolled a double and left Jail`);
+            } else {
                 player.jailTurnsRemaining -= 1;
                 if (player.jailTurnsRemaining > 0) {
+                    this.history(`${player.username} did not roll a double and stays in Jail (${player.jailTurnsRemaining} ${player.jailTurnsRemaining === 1 ? "try" : "tries"} left)`);
                     emitDice(false);
                     this.endTurn();
                     return true;
@@ -494,6 +501,7 @@ export class GameEngine {
                 }
                 player.isInJail = false;
                 player.jailTurnsRemaining = 0;
+                this.history(`${player.username} paid the fine and left Jail`);
             }
         } else {
             this.consecutiveDoubles = doubles ? this.consecutiveDoubles + 1 : 0;
@@ -527,7 +535,7 @@ export class GameEngine {
         if (!owner) { this.pendingLanding = { playerId: player.id, position: player.position }; this.phase = "awaiting-landing"; return; }
         if (owner.id !== player.id) {
             const rent = utilityCardRent ? rollTotal * rentMultiplier : this.rentFor(owner, player.position, rollTotal) * rentMultiplier;
-            this.transfer(player, owner, rent, `rent for ${String(space.name)}`);
+            this.transfer(player, owner, rent, `rent for ${String(space.name)}`, `${player.username} paid ${owner.username} £${rent} rent for ${String(space.name)}`);
         }
         this.endTurn();
     }
@@ -624,6 +632,7 @@ export class GameEngine {
         }
         player.isInJail = false;
         player.jailTurnsRemaining = 0;
+        this.history(`${player.username} left Jail ${option === "card" ? "with a Get Out of Jail Free card" : "by paying the £50 fine"}`);
         this.publish();
         return true;
     }
@@ -807,8 +816,8 @@ export class GameEngine {
                 if (card.subaction === "getout") player.getoutCards += 1;
                 else this.sendToJail(player);
                 break;
-            case "removefundstoplayers": for (const other of [...this.players.values()]) if (other.id !== player.id && this.players.has(player.id) && !this.transfer(player, other, card.amount ?? 0, "card payment")) break; break;
-            case "addfundsfromplayers": for (const other of [...this.players.values()]) if (other.id !== player.id && this.players.has(other.id)) this.transfer(other, player, card.amount ?? 0, "card payment"); break;
+            case "removefundstoplayers": for (const other of [...this.players.values()]) if (other.id !== player.id && this.players.has(player.id) && !this.transfer(player, other, card.amount ?? 0, "card payment", `${player.username} paid ${other.username} £${card.amount ?? 0} for ${cardReason(card)}`)) break; break;
+            case "addfundsfromplayers": for (const other of [...this.players.values()]) if (other.id !== player.id && this.players.has(other.id)) this.transfer(other, player, card.amount ?? 0, "card payment", `${other.username} paid ${player.username} £${card.amount ?? 0} for ${cardReason(card)}`); break;
             case "move":
                 this.moveByCard(player, card);
                 return this.resolveSpace(player, rollTotal);
@@ -893,7 +902,7 @@ export class GameEngine {
         return this.ownsCompleteGroup(owner, group) ? baseRent * 2 : baseRent;
     }
 
-    private transfer(from: EnginePlayer, to: EnginePlayer, amount: number, reason: string) {
+    private transfer(from: EnginePlayer, to: EnginePlayer, amount: number, reason: string, label?: string) {
         if (amount <= 0) return true;
         this.raiseCash(from, amount);
         if (from.balance < amount) {
@@ -902,7 +911,7 @@ export class GameEngine {
         }
         from.balance -= amount;
         to.balance += amount;
-        this.history(`${from.username} paid £${amount} for ${reason}`);
+        this.history(label ?? `${from.username} paid £${amount} for ${reason}`);
         return true;
     }
 
@@ -1004,7 +1013,8 @@ export class GameEngine {
         property.count = 0;
     }
 
-    private sendToJail(player: EnginePlayer) { player.position = 10; player.isInJail = true; player.jailTurnsRemaining = 3; this.consecutiveDoubles = 0; this.extraRollPending = false; }
+    private sendToJail(player: EnginePlayer) {
+        this.history(`${player.username} was sent to Jail`); player.position = 10; player.isInJail = true; player.jailTurnsRemaining = 3; this.consecutiveDoubles = 0; this.extraRollPending = false; }
     private scoreFinalStandings(): FinalStanding[] {
         const originalOrder = new Map(this.order.map((id, index) => [id, index]));
         return this.order.map((id) => this.players.get(id)).filter((player): player is EnginePlayer => Boolean(player)).map((player) => {
@@ -1031,6 +1041,39 @@ export class GameEngine {
             };
         }).sort((left, right) => right.netWorth - left.netWorth || right.cash - left.cash || (originalOrder.get(left.playerId) ?? 0) - (originalOrder.get(right.playerId) ?? 0))
             .map((standing, index) => ({ ...standing, rank: index + 1 }));
+    }
+
+    /** Host rematch: same players and seating, everything else back to a fresh lobby. */
+    private restart(player: EnginePlayer) {
+        if (this.phase !== "finished") return this.reject(player.id, "The game can only be restarted once it has finished");
+        if (player.id !== this.lobbyHostId) return this.reject(player.id, "Only the room host can start a new game");
+        for (const candidate of this.players.values()) {
+            candidate.position = 0;
+            candidate.balance = this.mode.startingCash;
+            candidate.properties = [];
+            candidate.isInJail = false;
+            candidate.jailTurnsRemaining = 0;
+            candidate.getoutCards = 0;
+            candidate.ready = false;
+        }
+        this.currentIndex = 0;
+        this.phase = "lobby";
+        this.pendingLanding = null;
+        this.pendingTrade = null;
+        this.pendingAuction = null;
+        this.pausedPlayerId = null;
+        this.consecutiveDoubles = 0;
+        this.extraRollPending = false;
+        this.currentPlayerRemoved = false;
+        this.cardDecks = freshCardDecks();
+        this.heldJailCards = {};
+        this.bankSupply = { houses: 32, hotels: 12 };
+        this.winnerId = null;
+        this.finalStandings = null;
+        this.turnRevision += 1;
+        this.history(`${player.username} started a new game`);
+        this.publish();
+        return true;
     }
 
     private endGame(player: EnginePlayer) {

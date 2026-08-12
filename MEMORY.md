@@ -55,6 +55,22 @@ pnpm build
 
 <!-- Newest first. Record meaningful features, fixes, migrations, refactors, or dependency changes. -->
 
+### 2026-08-11 — Claude
+
+- Fixed: Build and Sell are disabled with the reason in a tooltip when the action cannot succeed. They were always enabled, so the only way to learn the complete-set, even-development, mortgage, cash or bank-stock rules was to click and read an error toast. `buildAvailability` and `sellAvailability` in `gameViewState.ts` carry the logic with unit coverage for every branch.
+- Fixed: Stations and utilities no longer read "0 houses"; they show "Station" or "Utility".
+- Fixed: A jailed player's card said "Jail / Just Visiting · Jail". It now reads "In jail".
+- Added: Jail transitions are logged. Being sent to Jail, leaving on a double, leaving after the fine, and using a Get Out of Jail Free card all produce a line, and a failed jail roll says how many tries remain instead of logging a bare total.
+- Fixed: Rent and card payments name the recipient and read properly. "Carol paid £8 for rent for Pentonville Road" is now "Carol paid Alice £8 rent for Pentonville Road", and "paid £50 for card payment" now names both players and the card. `transfer` takes an optional full-sentence label.
+- Fixed: A finished game no longer claims a current turn. The panel reads "Game over / No further turns" and the leftover dice are hidden.
+- Fixed: A roll belonging to another player is labelled "Previous roll" and dimmed instead of sitting unlabelled under the current player's name.
+- Added: Host rematch. `restart` resets balances, positions, properties, decks, bank stock, ready flags and standings back to a lobby while keeping the players and their seats; the standings panel offers "Play again with the same players".
+- Fixed: Final standings stretched to the panel width; they were capped at 42rem and left a large empty band.
+- Files: `packages/game-engine/src/engine.ts`, `packages/game-engine/test/engine.test.ts`, `apps/web/src/GameView.tsx`, `apps/web/src/gameViewState.ts`, `apps/web/src/gameViewState.test.ts`, and `apps/web/src/styles.css`.
+- Validation: 43 engine + 17 web + 10 Node + 10 Worker tests, workspace type-check, web build, Worker dry-run. Verified live in Chrome across three clients: "PREVIOUS ROLL" on a non-current player's roll, "Electric Company | Utility", Build disabled on an incomplete set with "You need the complete Red set to build", "Carol paid Alice £8 rent for Pentonville Road", "Game over / No further turns", and a rematch returning all three clients to a fresh lobby.
+- Gotcha: Editing engine or server source restarts `tsx watch`, which drops every in-memory room and boots live players back to the entry screen with "Invalid room session". Finish live testing before touching those files.
+- Known open: dice and card presentations run on `setTimeout`, which Chrome throttles to roughly once a minute in a background tab. A player who switches away mid-turn has their animation queue — and therefore their controls, which are gated on it — stall until they refocus. It self-heals on refocus but can look like a hang.
+
 ### 2026-08-10 — Codex
 
 - Added: Mortgage now opens the full street/station/utility deed with the mortgage row highlighted and explicit Confirm/Cancel controls. Confirmation rechecks live turn/phase/ownership/mortgage eligibility, dispatches once, and does not advance the turn; close, overlay, Escape, invalidation, and Cancel do not dispatch.

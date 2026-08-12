@@ -750,3 +750,84 @@ describe("GameEngine authority", () => {
         expect(engine.snapshot()).toMatchObject({ phase: "finished", winnerId: "b" });
     });
 });
+
+describe("gameplay reporting and rematch", () => {
+    it("names the payer, recipient and property on a rent line", () => {
+        const engine = game([0, 0]);
+        ready(engine);
+        const internal = engine as unknown as { players: Map<string, { position: number; properties: Array<{ posistion: number; count: 0; group: string; mortgaged: boolean }> }> };
+        internal.players.get("b")!.properties = [{ posistion: 3, count: 0, group: "Brown", mortgaged: false }];
+        internal.players.get("a")!.position = 1;
+        const lines: string[] = [];
+        engine.on((event) => { if (event.type === "history") lines.push(event.action); });
+        engine.handle("a", { type: "roll" });
+        expect(lines).toContain("Alice paid Bob £4 rent for Whitechapel Road");
+    });
+
+    it("reports every jail entry and exit", () => {
+        const engine = game();
+        ready(engine);
+        const internal = engine as unknown as { players: Map<string, { position: number }> };
+        internal.players.get("a")!.position = 30;
+        const lines: string[] = [];
+        engine.on((event) => { if (event.type === "history") lines.push(event.action); });
+
+        // Landing on Go To Jail must say so rather than leaving the log silent.
+        (engine as unknown as { resolveSpace(player: unknown, roll: number): void }).resolveSpace(internal.players.get("a"), 0);
+        expect(lines).toContain("Alice was sent to Jail");
+
+        // A failed jail roll explains itself instead of logging a bare total.
+        // Sending a player to jail ends their turn, so drive this from a fresh
+        // snapshot where it is Alice's roll and she is already jailed.
+        const jailed = engine.snapshot();
+        const alice = jailed.players.find((candidate) => candidate.id === "a")!;
+        alice.isInJail = true;
+        alice.jailTurnsRemaining = 3;
+        const inJail = GameEngine.fromSnapshot({ ...jailed, currentPlayerId: "a", phase: "awaiting-roll" });
+        let index = 0;
+        (inJail as unknown as { random: () => number }).random = () => [0, 0.5][index++ % 2];
+        const jailLines: string[] = [];
+        inJail.on((event) => { if (event.type === "history") jailLines.push(event.action); });
+        expect(inJail.handle("a", { type: "roll" })).toBe(true);
+        expect(jailLines.some((line) => /stays in Jail \(2 tries left\)/.test(line))).toBe(true);
+    });
+
+    it("restarts into a fresh lobby for the host only, keeping the players", () => {
+        const engine = game();
+        ready(engine);
+        const internal = engine as unknown as { players: Map<string, { balance: number; position: number; properties: unknown[] }>; phase: string };
+        internal.players.get("a")!.properties = [{ posistion: 1, count: 0, group: "Brown", mortgaged: false }];
+        internal.players.get("a")!.balance = 42;
+        expect(engine.handle("a", { type: "end-game" })).toBe(true);
+        expect(engine.snapshot().phase).toBe("finished");
+
+        expect(engine.handle("b", { type: "restart" })).toBe(false);
+        expect(engine.handle("a", { type: "restart" })).toBe(true);
+        const after = engine.snapshot();
+        expect(after.phase).toBe("lobby");
+        expect(after.winnerId).toBeNull();
+        expect(after.finalStandings).toBeNull();
+        expect(after.players.map((player) => player.username)).toEqual(["Alice", "Bob"]);
+        expect(after.players.every((player) => player.balance === 1500 && player.position === 0 && player.properties.length === 0 && !player.ready)).toBe(true);
+        expect(after.bankSupply).toEqual({ houses: 32, hotels: 12 });
+    });
+});
+
+describe("card payments between players", () => {
+    it("names both sides and the card instead of a bare 'card payment'", () => {
+        const engine = game();
+        engine.connect("a", "Alice");
+        engine.connect("b", "Bob");
+        engine.handle("a", { type: "ready", ready: true });
+        engine.handle("b", { type: "ready", ready: true });
+        const lines: string[] = [];
+        engine.on((event) => { if (event.type === "history") lines.push(event.action); });
+        const chairman = (board.chance as Array<{ title: string; action: string; amount?: number }>).find((card) => card.action === "removefundstoplayers")!;
+        (engine as unknown as { drawCardEffect?: unknown; players: Map<string, unknown> });
+        const internal = engine as unknown as { players: Map<string, { username: string }> };
+        const alice = internal.players.get("a")!;
+        (engine as unknown as { transfer(from: unknown, to: unknown, amount: number, reason: string, label?: string): boolean })
+            .transfer(alice, internal.players.get("b"), chairman.amount ?? 0, "card payment", `${alice.username} paid Bob £${chairman.amount} for ${chairman.title.split(/[;:]/)[0].trim()}`);
+        expect(lines).toContain("Alice paid Bob £50 for Elected Chairman of the Board");
+    });
+});
