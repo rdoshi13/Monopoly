@@ -38,7 +38,8 @@ Monopoly is a pnpm-workspace React 18 and TypeScript multiplayer game. A shared 
 - Production `ALLOWED_ORIGIN` must be changed from localhost to the actual Pages/custom origin.
 - `.eslintrc.cjs` survives at the root but no package installs ESLint and there is no lint script, so it configures tooling that is not present. Wire it up or delete it; do not assume `pnpm lint` exists.
 - The Worker's `/ws` upgrade requires `?room=CODE`. Without it the request cannot be routed to the right room's Durable Object and is rejected with 400. The Socket.IO transport ignores the parameter.
-- The workspace is pinned to pnpm 9.12.3. If a Codex fallback runtime exposes pnpm 11, use `/opt/homebrew/bin/pnpm`; pnpm 11 may request an unintended `node_modules` purge.
+- The workspace is pinned to pnpm 9.12.3, installed globally via `npm i -g pnpm@9.12.3`. Do not let a pnpm 11 fallback run here; it may request an unintended `node_modules` purge.
+- A Homebrew Node upgrade breaks pnpm: Node 26 dropped corepack, so the old `/opt/homebrew/bin/{pnpm,pnpx}` symlinks into the removed Cellar version dangle and block `npm i -g pnpm`. Delete those two links first, then reinstall. `yarn` and `yarnpkg` are dangling the same way but are unused here. Until pnpm is restored, each package's `node_modules/.bin/{tsc,vitest,vite,wrangler}` works directly.
 - When changing coded-board grid track ratios, update the rotated left/right `.board-space-inner` dimensions as reciprocal geometry; leaving the former 2:1 dimensions on the 1.6:1 side tracks makes labels spill across the board.
 - Salary presentation depends on event order. Wrapped dice rolls must emit `dice` before `salary` and salary history so movement cannot lag behind or lose its non-blocking +£200 animation on separate Worker WebSocket messages.
 
@@ -74,7 +75,7 @@ pnpm build
 - Changed: Other players are blocked during a settlement but may still accept a trade the debtor offers, since a deal can raise money the debtor cannot raise alone.
 - Files: `packages/game-engine/src/engine.ts`, `packages/game-engine/test/engine.test.ts`, `apps/web/src/gameViewState.ts`, `apps/web/src/GameView.tsx`, and `apps/web/src/styles.css`.
 - Validation: 49 engine + 25 web + 10 Node + 10 Worker tests, per-package type-check, web build, Worker dry-run. Two existing tests were rewritten because the behaviour changed on purpose: the forced-sale test now asserts the pause and player-driven settlement, and the bankruptcy test now declares it. Verified live in Chrome through the Node server: Alice at £10 landing on Fleet Street produced "You owe £18 for rent for Fleet Street / You need £8 more", Bob saw "Play is paused while they raise the money" with his roll withdrawn, and a £50-for-£10 trade cleared the debt and resumed play with "Alice paid Bob £18 rent for Fleet Street".
-- Gotcha: Node 26 dropped corepack and the Homebrew upgrade left `/opt/homebrew/bin/pnpm` dangling, so `pnpm` is unavailable. Run each package's own `node_modules/.bin/{tsc,vitest,vite,wrangler}` directly until pnpm is reinstalled.
+- Gotcha: Node 26 dropped corepack and the Homebrew upgrade left `/opt/homebrew/bin/pnpm` dangling. Resolved on 2026-08-12 by removing the dangling `pnpm`/`pnpx` links and reinstalling pnpm 9.12.3 globally.
 - Known limitation (fixed 2026-08-12): a card that pays every player stopped at the first shortfall, leaving later creditors unpaid.
 
 ### 2026-08-11 — Claude
