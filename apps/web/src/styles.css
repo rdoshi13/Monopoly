@@ -278,3 +278,11 @@ button.coded-space.purchasable:focus-visible { z-index: 5; outline: 3px solid #c
 .deed-buy-blocked { display: block; margin-top: .1rem; color: #8d2020; font-size: .82rem; text-align: center; }
 
 .development-rates { margin: .35rem 0 .1rem; color: #55625a; font-size: .84rem; }
+
+/* Settlement pauses everyone, so make the reason and the way out obvious. */
+.settlement-panel { border: 2px solid #c9a336; background: #fffaf0; }
+.settlement-panel.mine { border-color: #c93636; background: #fff5f5; }
+.settlement-panel h3 { margin: .2rem 0 .4rem; }
+.settlement-panel p { margin: 0 0 .7rem; font-size: .9rem; }
+.settlement-panel button { width: 100%; }
+button.danger { background: #8d2020; color: #fff; }

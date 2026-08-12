@@ -6,7 +6,7 @@ import { PropertyCardModal } from "./PropertyCard";
 import { GameCardModal, type DrawnCardEvent } from "./GameCard";
 import { CodedBoard } from "./CodedBoard";
 import { isStreetGroup } from "./boardColors";
-import { buildAvailability, compareBalances, developmentConfirmation, landingPresentationKey, mortgageAvailability, mortgageConfirmationProperty, purchaseAvailability, sellAvailability, type DevelopmentIntent } from "./gameViewState";
+import { buildAvailability, compareBalances, developmentConfirmation, isSettlingPlayer, landingPresentationKey, mortgageAvailability, mortgageConfirmationProperty, purchaseAvailability, sellAvailability, type DevelopmentIntent } from "./gameViewState";
 import { matchingSalaryPresentationId, readySalaryPresentations, type SalaryPresentation } from "./salaryPresentation";
 import { Toast } from "./Toast";
 import { EndGameDialog } from "./EndGameDialog";
@@ -59,15 +59,29 @@ function TradePanel({ game, playerId, send, interactionLocked }: { game: GameSna
   const [requestedCash, setRequestedCash] = useState(0);
   const [offeredPositions, setOfferedPositions] = useState<number[]>([]);
   const [requestedPositions, setRequestedPositions] = useState<number[]>([]);
+  const [offeredJailCards, setOfferedJailCards] = useState(0);
+  const [requestedJailCards, setRequestedJailCards] = useState(0);
   const [composerOpen, setComposerOpen] = useState(false);
   const offerDialogRef = useRef<HTMLElement>(null);
   const offerAcceptButtonRef = useRef<HTMLButtonElement>(null);
   const composerDialogRef = useRef<HTMLElement>(null);
   const composerCloseButtonRef = useRef<HTMLButtonElement>(null);
   const recipient = game.players.find((player) => player.id === tradeTo);
-  const canPropose = !interactionLocked && game.currentPlayerId === playerId && game.phase === "awaiting-roll" && game.selectedMode.AllowDeals && !game.pendingTrade;
+  // A debtor may negotiate their way out, so proposing is allowed while settling too.
+  const settling = isSettlingPlayer(game, playerId);
+  const canPropose = !interactionLocked && game.selectedMode.AllowDeals && !game.pendingTrade && (settling || (game.currentPlayerId === playerId && game.phase === "awaiting-roll"));
   const toggle = (values: number[], position: number) => values.includes(position) ? values.filter((value) => value !== position) : [...values, position];
-  const summary = (offer: TradeOffer) => `${game.players.find((player) => player.id === offer.from)?.username ?? "Player"} offers £${offer.offeredCash}${offer.offeredPositions.length ? ` and ${offer.offeredPositions.map(propertyName).join(", ")}` : ""} for £${offer.requestedCash}${offer.requestedPositions.length ? ` and ${offer.requestedPositions.map(propertyName).join(", ")}` : ""}.`;
+  const jailCardLabel = (count: number) => `${count} Get Out of Jail Free card${count === 1 ? "" : "s"}`;
+  const side = (cash: number, positions: number[], jailCards: number) => [
+    ...(cash > 0 ? [`£${cash}`] : []),
+    ...positions.map(propertyName),
+    ...(jailCards > 0 ? [jailCardLabel(jailCards)] : []),
+  ];
+  const summary = (offer: TradeOffer) => {
+    const gives = side(offer.offeredCash, offer.offeredPositions, offer.offeredJailCards);
+    const wants = side(offer.requestedCash, offer.requestedPositions, offer.requestedJailCards);
+    return `${game.players.find((player) => player.id === offer.from)?.username ?? "Player"} offers ${gives.length ? gives.join(", ") : "nothing"} for ${wants.length ? wants.join(", ") : "nothing"}.`;
+  };
 
   const incomingTrade = game.pendingTrade && game.pendingTrade.to === playerId ? game.pendingTrade : null;
   const incomingTradeOpen = incomingTrade !== null;
@@ -121,8 +135,8 @@ function TradePanel({ game, playerId, send, interactionLocked }: { game: GameSna
         <span className="eyebrow">Trade offer</span>
         <h2 id="trade-offer-title">{game.players.find((player) => player.id === incomingTrade.from)?.username ?? "A player"} wants to trade</h2>
         <div className="trade-offer-columns">
-          <div><h3>You receive</h3><ul>{incomingTrade.offeredCash > 0 && <li>£{incomingTrade.offeredCash}</li>}{incomingTrade.offeredPositions.map((position) => <li key={position}>{propertyName(position)}</li>)}{!incomingTrade.offeredCash && !incomingTrade.offeredPositions.length && <li className="muted">Nothing</li>}</ul></div>
-          <div><h3>You give</h3><ul>{incomingTrade.requestedCash > 0 && <li>£{incomingTrade.requestedCash}</li>}{incomingTrade.requestedPositions.map((position) => <li key={position}>{propertyName(position)}</li>)}{!incomingTrade.requestedCash && !incomingTrade.requestedPositions.length && <li className="muted">Nothing</li>}</ul></div>
+          <div><h3>You receive</h3><ul>{side(incomingTrade.offeredCash, incomingTrade.offeredPositions, incomingTrade.offeredJailCards).map((entry) => <li key={entry}>{entry}</li>)}{!side(incomingTrade.offeredCash, incomingTrade.offeredPositions, incomingTrade.offeredJailCards).length && <li className="muted">Nothing</li>}</ul></div>
+          <div><h3>You give</h3><ul>{side(incomingTrade.requestedCash, incomingTrade.requestedPositions, incomingTrade.requestedJailCards).map((entry) => <li key={entry}>{entry}</li>)}{!side(incomingTrade.requestedCash, incomingTrade.requestedPositions, incomingTrade.requestedJailCards).length && <li className="muted">Nothing</li>}</ul></div>
         </div>
         <div className="actions"><button className="primary" onClick={() => send({ type: "trade-accept" })} ref={offerAcceptButtonRef}>Accept trade</button><button className="secondary" onClick={() => send({ type: "trade-reject" })}>Reject</button></div>
       </section>
@@ -133,8 +147,12 @@ function TradePanel({ game, playerId, send, interactionLocked }: { game: GameSna
         <h2 id="trade-dialog-title">Propose a trade</h2>
         <label>Trade with<select value={tradeTo} onChange={(event) => { setTradeTo(event.target.value); setRequestedPositions([]); }}><option value="">Choose player</option>{game.players.filter((player) => player.id !== playerId).map((player) => <option value={player.id} key={player.id}>{player.username}</option>)}</select></label>
         <div className="cash-grid"><label>You offer<input type="number" min="0" value={offeredCash} onChange={(event) => setOfferedCash(Math.max(0, Math.floor(Number(event.target.value) || 0)))} /></label><label>You request<input type="number" min="0" value={requestedCash} onChange={(event) => setRequestedCash(Math.max(0, Math.floor(Number(event.target.value) || 0)))} /></label></div>
+        {(me?.getoutCards ?? 0) > 0 || (recipient?.getoutCards ?? 0) > 0 ? <div className="cash-grid">
+          <label>Your jail cards<input type="number" min="0" max={me?.getoutCards ?? 0} value={offeredJailCards} onChange={(event) => setOfferedJailCards(Math.min(me?.getoutCards ?? 0, Math.max(0, Math.floor(Number(event.target.value) || 0))))} /></label>
+          <label>Their jail cards<input type="number" min="0" max={recipient?.getoutCards ?? 0} value={requestedJailCards} onChange={(event) => setRequestedJailCards(Math.min(recipient?.getoutCards ?? 0, Math.max(0, Math.floor(Number(event.target.value) || 0))))} /></label>
+        </div> : null}
         <div className="trade-properties"><fieldset><legend>Your properties</legend>{me?.properties.length ? me.properties.map((property) => <label key={property.posistion}><input type="checkbox" checked={offeredPositions.includes(property.posistion)} onChange={() => setOfferedPositions((values) => toggle(values, property.posistion))} />{propertyName(property.posistion)}</label>) : <small>None</small>}</fieldset><fieldset><legend>Their properties</legend>{recipient?.properties.length ? recipient.properties.map((property) => <label key={property.posistion}><input type="checkbox" checked={requestedPositions.includes(property.posistion)} onChange={() => setRequestedPositions((values) => toggle(values, property.posistion))} />{propertyName(property.posistion)}</label>) : <small>{recipient ? "None" : "Choose a player"}</small>}</fieldset></div>
-        <div className="actions"><button className="primary" disabled={!tradeTo} onClick={() => { if (!tradeTo) return; send({ type: "trade-propose", to: tradeTo, offeredPositions, requestedPositions, offeredCash, requestedCash }); closeComposer(); }}>Send offer</button><button className="secondary" onClick={closeComposer}>Cancel</button></div>
+        <div className="actions"><button className="primary" disabled={!tradeTo} onClick={() => { if (!tradeTo) return; send({ type: "trade-propose", to: tradeTo, offeredPositions, requestedPositions, offeredCash, requestedCash, offeredJailCards, requestedJailCards }); closeComposer(); }}>Send offer</button><button className="secondary" onClick={closeComposer}>Cancel</button></div>
       </section>
     </div>}
   </section>;
@@ -358,6 +376,10 @@ export function GameView({ room, game, playerId, connection, error, events, pres
   const showCountdown = secondsLeft !== null && (game.selectedMode.turnTimer !== undefined || secondsLeft <= 60);
   const playersWithConnection = game.players.map((player) => ({ ...player, connected: room.players.find((candidate) => candidate.playerId === player.id)?.connected ?? false }));
   const presentationBusy = rollPresentation !== null || cardPresentation !== null || presentationEvents.length > 0;
+  const debt = game.pendingDebt;
+  const iOweDebt = isSettlingPlayer(game, playerId);
+  const debtor = debt ? game.players.find((player) => player.id === debt.playerId) : undefined;
+  const shortfall = debt && debtor ? Math.max(0, debt.amount - debtor.balance) : 0;
   const pendingMortgageProperty = mortgageConfirmationPosition === null ? null : mortgageConfirmationProperty(game, playerId, mortgageConfirmationPosition, presentationBusy);
   const mortgageConfirmationEligible = pendingMortgageProperty !== null;
   useEffect(() => {
@@ -424,12 +446,25 @@ export function GameView({ room, game, playerId, connection, error, events, pres
           {game.phase === "awaiting-auction" && game.pendingAuction && <><p>Highest bid: <strong>£{game.pendingAuction.highestBid}</strong>{game.pendingAuction.highestBidderId ? ` by ${game.players.find((player) => player.id === game.pendingAuction?.highestBidderId)?.username ?? "player"}` : ""}</p>{passedAuction ? <p className="muted">You passed. Waiting for the remaining bidders.</p> : <div className="actions"><input aria-label="Auction bid" type="number" min={game.pendingAuction.highestBid + 1} max={me?.balance} value={auctionBid} onChange={(event) => setAuctionBid(Math.max(1, Math.floor(Number(event.target.value) || 1)))} /><button className="primary" onClick={() => send({ type: "auction-bid", amount: auctionBid })}>Bid</button><button className="secondary" onClick={() => send({ type: "auction-pass" })}>Pass</button></div>}</>}
         </section>
         <section className="panel"><h3>Players</h3><div className="players">{playersWithConnection.map((player) => <button type="button" className={`player-card player-card-button ${player.id === game.currentPlayerId ? "active" : ""}${player.id === highlightedPlayerId ? " selected" : ""}`} style={{ "--player-color": playerColor(player.icon) } as React.CSSProperties} aria-label={`Highlight ${player.username} on the board for 3 seconds`} aria-pressed={player.id === highlightedPlayerId} onClick={() => highlightPlayer(player.id)} key={player.id}><span className={`token token-${player.icon}`}><img src={playerTokens[player.icon] ?? playerTokens[0]} alt="" /></span><span><strong>{player.username}{player.id === playerId ? " (you)" : ""}</strong><small>£{player.balance} · {player.isInJail ? "In jail" : propertyName(player.position)}</small></span><i className={player.connected ? "online" : "offline"} />{moneyDeltas.filter((delta) => delta.playerId === player.id).map((delta) => <span className={`money-delta ${delta.amount > 0 ? "gain" : "loss"}`} key={delta.id} aria-hidden="true">{delta.amount > 0 ? "+" : "−"}£{Math.abs(delta.amount)}</span>)}{presentableSalaryEvents.filter((event) => event.playerId === player.id).map((event) => <span className="go-salary" key={event.id} aria-hidden="true">{event.reason === "advanced" ? "Advanced to Go" : "Passed Go"} · +£{event.amount}</span>)}</button>)}</div>{presentableSalaryEvents.slice(-1).map((event) => <span className="visually-hidden" role="status" key={event.id}>{game.players.find((player) => player.id === event.playerId)?.username ?? "A player"} {event.reason === "advanced" ? "advanced to Go" : "passed Go"} and collected £{event.amount}</span>)}</section>
+        {debt && <section className={`panel settlement-panel${iOweDebt ? " mine" : ""}`}>
+          <span className="eyebrow">Payment due</span>
+          {iOweDebt ? <>
+            <h3>You owe £{debt.amount} for {debt.reason}</h3>
+            <p>{shortfall > 0
+              ? <>You need <strong>£{shortfall}</strong> more. Sell buildings, mortgage a property, or trade — the payment goes through the moment you can cover it.</>
+              : <>You can cover this now; the payment is going through.</>}</p>
+            <button className="danger" onClick={() => send({ type: "declare-bankruptcy" })}>Declare bankruptcy</button>
+          </> : <>
+            <h3>{debtor?.username ?? "A player"} owes £{debt.amount}</h3>
+            <p className="muted">Play is paused while they raise the money. You can still accept a trade they offer.</p>
+          </>}
+        </section>}
         <section className="panel"><h3>Your properties</h3>{me?.properties.length ? <ul className="property-list">{me.properties.map((property) => {
           const street = isStreetGroup(property.group);
           const build = buildAvailability(game, playerId, property.posistion);
           const sell = sellAvailability(game, playerId, property.posistion);
           const mortgage = mortgageAvailability(game, playerId, property.posistion);
-          return <li key={property.posistion}><span><strong>{propertyName(property.posistion)}</strong><small>{street ? property.count === "h" ? "Hotel" : `${property.count} ${property.count === 1 ? "house" : "houses"}` : property.group === "Railroad" ? "Station" : "Utility"}{property.mortgaged ? " · Mortgaged" : ""}</small></span>{!presentationBusy && myTurn && game.phase === "awaiting-roll" && <span className="mini-actions">{street && <><button disabled={!build.allowed} title={build.reason} onClick={() => openDevelopmentConfirmation(property.posistion, "build")}>Build</button><button disabled={!sell.allowed} title={sell.reason} onClick={() => openDevelopmentConfirmation(property.posistion, "sell")}>Sell</button></>}<button disabled={!mortgage.allowed} title={mortgage.reason} onClick={() => property.mortgaged ? send({ type: "unmortgage", position: property.posistion }) : openMortgageConfirmation(property.posistion)}>{property.mortgaged ? "Redeem" : "Mortgage"}</button></span>}</li>;
+          return <li key={property.posistion}><span><strong>{propertyName(property.posistion)}</strong><small>{street ? property.count === "h" ? "Hotel" : `${property.count} ${property.count === 1 ? "house" : "houses"}` : property.group === "Railroad" ? "Station" : "Utility"}{property.mortgaged ? " · Mortgaged" : ""}</small></span>{!presentationBusy && (iOweDebt || (myTurn && game.phase === "awaiting-roll")) && <span className="mini-actions">{street && <>{!iOweDebt && <button disabled={!build.allowed} title={build.reason} onClick={() => openDevelopmentConfirmation(property.posistion, "build")}>Build</button>}<button disabled={!sell.allowed} title={sell.reason} onClick={() => openDevelopmentConfirmation(property.posistion, "sell")}>Sell</button></>}<button disabled={!mortgage.allowed} title={mortgage.reason} onClick={() => property.mortgaged ? send({ type: "unmortgage", position: property.posistion }) : openMortgageConfirmation(property.posistion)}>{property.mortgaged ? "Redeem" : "Mortgage"}</button></span>}</li>;
         })}</ul> : <p className="muted">No properties yet.</p>}<small className="muted">Bank: {game.bankSupply.houses} houses · {game.bankSupply.hotels} hotels</small></section>
         <TradePanel game={game} playerId={playerId} send={send} interactionLocked={presentationBusy} />
         <section className="panel events"><h3>Game events</h3>{events.length ? <ol>{events.map((event) => <li key={event.id}>{event.playerId ? `${game.players.find((player) => player.id === event.playerId)?.username ?? "A player"} ${event.text}` : event.text}</li>)}</ol> : <p className="muted">Rolls, cards and payments will appear here.</p>}</section>

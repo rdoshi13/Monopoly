@@ -514,7 +514,7 @@ describe("GameEngine authority", () => {
         expect(player(engine, "a").balance).toBe(1475);
     });
 
-    it("sells only as many buildings as a forced payment needs, keeping the group even", () => {
+    it("pauses on the debtor instead of liquidating for them, and settles once they raise it", () => {
         const engine = game([0, 0]);
         ready(engine);
         const internal = engine as unknown as {
@@ -531,16 +531,48 @@ describe("GameEngine authority", () => {
         internal.players.get("b")!.properties = [{ posistion: 39, count: 0, group: "Dark Blue", mortgaged: false }];
         internal.bankSupply.houses = 24;
 
-        // Rolling 1 + 1 lands Alice on Mayfair, owing £50 base rent.
+        // Rolling 1 + 1 lands Alice on Mayfair, owing £50 base rent she cannot pay.
         expect(engine.handle("a", { type: "roll" })).toBe(true);
+        expect(engine.snapshot().phase).toBe("awaiting-settlement");
+        expect(engine.snapshot().pendingDebt).toEqual({ playerId: "a", amount: 50, creditorId: "b", reason: "rent for Mayfair", label: "Alice paid Bob £50 rent for Mayfair" });
+        // Nothing was sold on her behalf, and Bob has not been paid yet.
+        expect(player(engine, "a").properties.map((property) => property.count)).toEqual([4, 4]);
+        expect(player(engine, "b").balance).toBe(1500);
 
-        const alice = player(engine, "a");
-        // Houses cost £50, so each sells for £25: exactly two cover the £50 rent.
-        expect(alice.properties.map((property) => property.count)).toEqual([3, 3]);
-        expect(alice.balance).toBe(0);
-        expect(engine.snapshot().bankSupply.houses).toBe(26);
+        // Other players stay blocked while the debt stands.
+        expect(engine.handle("b", { type: "roll" })).toBe(false);
+
+        // Selling two houses at £25 each covers it and play resumes automatically.
+        expect(engine.handle("a", { type: "sell-building", position: 1 })).toBe(true);
+        expect(engine.snapshot().phase).toBe("awaiting-settlement");
+        expect(engine.handle("a", { type: "sell-building", position: 3 })).toBe(true);
+        expect(engine.snapshot().phase).toBe("awaiting-roll");
+        expect(engine.snapshot().pendingDebt).toBeNull();
+        expect(player(engine, "a").properties.map((property) => property.count)).toEqual([3, 3]);
+        expect(player(engine, "a").balance).toBe(0);
         expect(player(engine, "b").balance).toBe(1550);
-        expect(alice.properties.every((property) => property.mortgaged)).toBe(false);
+        expect(engine.snapshot().bankSupply.houses).toBe(26);
+    });
+
+    it("liquidates and bankrupts only when the settlement deadline expires", () => {
+        const engine = game([0, 0]);
+        ready(engine);
+        const internal = engine as unknown as { players: Map<string, { position: number; balance: number; properties: Array<{ posistion: number; count: 0 | 4; group: string; mortgaged: boolean }> }> };
+        internal.players.get("a")!.position = 37;
+        internal.players.get("a")!.balance = 0;
+        internal.players.get("a")!.properties = [
+            { posistion: 1, count: 4, group: "Brown", mortgaged: false },
+            { posistion: 3, count: 4, group: "Brown", mortgaged: false },
+        ];
+        internal.players.get("b")!.properties = [{ posistion: 39, count: 0, group: "Dark Blue", mortgaged: false }];
+        expect(engine.handle("a", { type: "roll" })).toBe(true);
+        expect(engine.snapshot().turnTimeoutSeconds).toBe(120);
+
+        // The backstop still liquidates automatically rather than hanging the room.
+        expect(engine.expireTurn()).toBe(true);
+        expect(engine.snapshot().phase).toBe("awaiting-roll");
+        expect(engine.snapshot().pendingDebt).toBeNull();
+        expect(player(engine, "b").balance).toBe(1550);
     });
 
     it("charges ceilinged mortgage transfer interest to both sides of a trade", () => {
@@ -667,7 +699,7 @@ describe("GameEngine authority", () => {
         expect(engine.snapshot().currentPlayerId).toBe("b");
     });
 
-    it("liquidates assets and transfers the remaining estate on bankruptcy", () => {
+    it("transfers the remaining estate when the debtor declares bankruptcy", () => {
         const engine = game([0, 1 / 6]);
         ready(engine);
         const internal = engine as unknown as { players: Map<string, { position: number; balance: number; properties: Array<{ posistion: number; count: 0 | "h"; group: string; mortgaged: boolean }> }> };
@@ -679,11 +711,15 @@ describe("GameEngine authority", () => {
         internal.players.get("b")!.properties = [{ posistion: 39, count: "h", group: "Blue", mortgaged: false }];
 
         expect(engine.handle("a", { type: "roll" })).toBe(true);
+        expect(engine.snapshot().phase).toBe("awaiting-settlement");
+        // Only the debtor may declare, and only while a debt stands.
+        expect(engine.handle("b", { type: "declare-bankruptcy" })).toBe(false);
+        expect(engine.handle("a", { type: "declare-bankruptcy" })).toBe(true);
+
         expect(engine.snapshot().phase).toBe("finished");
         expect(engine.snapshot().winnerId).toBe("b");
         expect(engine.snapshot().players.map((candidate) => candidate.id)).toEqual(["b"]);
         expect(player(engine, "b").properties.map((property) => property.posistion)).toEqual(expect.arrayContaining([5, 39]));
-        expect(player(engine, "b").properties.find((property) => property.posistion === 5)?.mortgaged).toBe(true);
     });
 
     it("ends on host request with deterministic net-worth standings and component breakdowns", () => {
@@ -829,5 +865,92 @@ describe("card payments between players", () => {
         (engine as unknown as { transfer(from: unknown, to: unknown, amount: number, reason: string, label?: string): boolean })
             .transfer(alice, internal.players.get("b"), chairman.amount ?? 0, "card payment", `${alice.username} paid Bob £${chairman.amount} for ${chairman.title.split(/[;:]/)[0].trim()}`);
         expect(lines).toContain("Alice paid Bob £50 for Elected Chairman of the Board");
+    });
+});
+
+describe("insolvency settlement", () => {
+    /** Puts Alice on Mayfair owing Bob £50 with only £10 in hand. */
+    function owing() {
+        const engine = game([0, 0]);
+        ready(engine);
+        const internal = engine as unknown as { players: Map<string, { position: number; balance: number; getoutCards: number; properties: Array<{ posistion: number; count: 0; group: string; mortgaged: boolean }> }> };
+        internal.players.get("a")!.position = 37;
+        internal.players.get("a")!.balance = 10;
+        internal.players.get("b")!.properties = [{ posistion: 39, count: 0, group: "Dark Blue", mortgaged: false }];
+        return { engine, internal };
+    }
+
+    it("lets the debtor mortgage their way out and keeps others blocked", () => {
+        const { engine, internal } = owing();
+        internal.players.get("a")!.properties = [{ posistion: 5, count: 0, group: "Railroad", mortgaged: false }];
+        expect(engine.handle("a", { type: "roll" })).toBe(true);
+        expect(engine.snapshot().phase).toBe("awaiting-settlement");
+
+        // Only the debtor may act, and only to raise money — not to spend it.
+        expect(engine.handle("b", { type: "roll" })).toBe(false);
+        expect(engine.handle("b", { type: "mortgage", position: 39 })).toBe(false);
+        expect(engine.handle("a", { type: "build", position: 5 })).toBe(false);
+        expect(engine.handle("a", { type: "unmortgage", position: 5 })).toBe(false);
+
+        // King's Cross mortgages for £100, clearing the £50 debt.
+        expect(engine.handle("a", { type: "mortgage", position: 5 })).toBe(true);
+        expect(engine.snapshot().phase).toBe("awaiting-roll");
+        expect(engine.snapshot().pendingDebt).toBeNull();
+        expect(player(engine, "a").balance).toBe(60);
+        expect(player(engine, "b").balance).toBe(1550);
+    });
+
+    it("lets the debtor trade out of a debt they cannot cover alone", () => {
+        const { engine, internal } = owing();
+        // No buildings and no mortgageable property: only a deal can save her.
+        internal.players.get("a")!.properties = [];
+        internal.players.get("a")!.getoutCards = 1;
+        (engine as unknown as { heldJailCards: Record<string, string[]> }).heldJailCards = { a: ["chance"] };
+        expect(engine.handle("a", { type: "roll" })).toBe(true);
+        expect(engine.snapshot().phase).toBe("awaiting-settlement");
+
+        // Selling the Get Out of Jail Free card raises the cash.
+        expect(engine.handle("a", { type: "trade-propose", to: "b", offeredPositions: [], requestedPositions: [], offeredCash: 0, requestedCash: 200, offeredJailCards: 1, requestedJailCards: 0 })).toBe(true);
+        expect(engine.handle("b", { type: "trade-accept" })).toBe(true);
+
+        expect(engine.snapshot().phase).toBe("awaiting-roll");
+        expect(engine.snapshot().pendingDebt).toBeNull();
+        expect(player(engine, "a").getoutCards).toBe(0);
+        expect(player(engine, "b").getoutCards).toBe(1);
+        // £10 + £200 raised - £50 rent = £160; Bob paid £200 and received £50.
+        expect(player(engine, "a").balance).toBe(160);
+        expect(player(engine, "b").balance).toBe(1350);
+        expect(engine.snapshot().heldJailCards.b).toEqual(["chance"]);
+    });
+
+    it("clears the debt and resumes if the debtor disconnects mid-settlement", () => {
+        const { engine, internal } = owing();
+        internal.players.get("a")!.properties = [];
+        expect(engine.handle("a", { type: "roll" })).toBe(true);
+        expect(engine.snapshot().phase).toBe("awaiting-settlement");
+        engine.disconnect("a");
+        expect(engine.snapshot().pendingDebt).toBeNull();
+        expect(engine.snapshot().phase).not.toBe("awaiting-settlement");
+    });
+});
+
+describe("jail cards in trades", () => {
+    it("refuses to trade a card the player does not hold", () => {
+        const engine = game();
+        ready(engine);
+        expect(engine.handle("a", { type: "trade-propose", to: "b", offeredPositions: [], requestedPositions: [], offeredCash: 0, requestedCash: 0, offeredJailCards: 1, requestedJailCards: 0 })).toBe(false);
+    });
+
+    it("reports the card in the trade history", () => {
+        const engine = game();
+        ready(engine);
+        const internal = engine as unknown as { players: Map<string, { getoutCards: number }>; heldJailCards: Record<string, string[]> };
+        internal.players.get("a")!.getoutCards = 1;
+        internal.heldJailCards = { a: ["communitychest"] };
+        const lines: string[] = [];
+        engine.on((event) => { if (event.type === "history") lines.push(event.action); });
+        expect(engine.handle("a", { type: "trade-propose", to: "b", offeredPositions: [], requestedPositions: [], offeredCash: 0, requestedCash: 75, offeredJailCards: 1, requestedJailCards: 0 })).toBe(true);
+        expect(engine.handle("b", { type: "trade-accept" })).toBe(true);
+        expect(lines).toContain("Alice gave 1 Get Out of Jail Free card to Bob for £75");
     });
 });

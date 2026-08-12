@@ -6,9 +6,20 @@ type PlayerBalance = Pick<GameSnapshot["players"][number], "id" | "balance">;
 
 export type BalanceChange = { playerId: string; amount: number };
 
+/** True while this player is the one who owes money and play is paused on them. */
+export function isSettlingPlayer(game: Pick<GameSnapshot, "phase" | "pendingDebt">, playerId: string) {
+  return game.phase === "awaiting-settlement" && game.pendingDebt?.playerId === playerId;
+}
+
+/** Raising cash is allowed on your own roll phase, or while you are settling a debt. */
+function canRaiseCash(game: GameSnapshot, playerId: string, presentationBlocking: boolean) {
+  if (presentationBlocking || game.pausedPlayerId !== null) return false;
+  return isSettlingPlayer(game, playerId) || (game.currentPlayerId === playerId && game.phase === "awaiting-roll");
+}
+
 /** Mortgage confirmation is valid only while the authoritative snapshot still permits it. */
 export function mortgageConfirmationProperty(game: GameSnapshot, playerId: string, position: number, presentationBlocking: boolean) {
-  if (presentationBlocking || game.pausedPlayerId !== null || game.currentPlayerId !== playerId || game.phase !== "awaiting-roll" || !game.selectedMode.mortageAllowed) return null;
+  if (!canRaiseCash(game, playerId, presentationBlocking) || !game.selectedMode.mortageAllowed) return null;
   const player = game.players.find((candidate) => candidate.id === playerId);
   const property = player?.properties.find((candidate) => candidate.posistion === position);
   return property && !property.mortgaged ? property : null;
@@ -109,7 +120,9 @@ export type DevelopmentConfirmation = {
  * that made it legal.
  */
 export function developmentConfirmation(game: GameSnapshot, playerId: string, position: number, intent: DevelopmentIntent, presentationBlocking: boolean): DevelopmentConfirmation | null {
-  if (presentationBlocking || game.pausedPlayerId !== null || game.currentPlayerId !== playerId || game.phase !== "awaiting-roll") return null;
+  if (!canRaiseCash(game, playerId, presentationBlocking)) return null;
+  // Building spends money, so it is not available while settling a debt.
+  if (intent === "build" && isSettlingPlayer(game, playerId)) return null;
   const availability = intent === "build" ? buildAvailability(game, playerId, position) : sellAvailability(game, playerId, position);
   if (!availability.allowed) return null;
   const property = game.players.find((candidate) => candidate.id === playerId)?.properties.find((candidate) => candidate.posistion === position);
@@ -135,7 +148,7 @@ export function mortgageAvailability(game: GameSnapshot, playerId: string, posit
   const property = player?.properties.find((candidate) => candidate.posistion === position);
   const space = boardSpaces.find((candidate) => candidate.posistion === position);
   if (!player || !property || !space || space.price === undefined) return { allowed: false, reason: "You do not own this property" };
-  if (!game.selectedMode.mortageAllowed) return { allowed: false, reason: "Mortgages are disabled in this mode" };
+  if (!game.selectedMode.mortageAllowed && !isSettlingPlayer(game, playerId)) return { allowed: false, reason: "Mortgages are disabled in this mode" };
   const value = Math.floor(space.price / 2);
   if (property.mortgaged) {
     const cost = value + Math.ceil(value / 10);

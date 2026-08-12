@@ -14,8 +14,9 @@ const MonopolyModes: MonopolyMode[] = [
  */
 const IDLE_TURN_SECONDS = 300;
 const AUCTION_SECONDS = 60;
+const SETTLEMENT_SECONDS = 120;
 
-export type GamePhase = "lobby" | "awaiting-roll" | "awaiting-landing" | "awaiting-auction" | "finished";
+export type GamePhase = "lobby" | "awaiting-roll" | "awaiting-landing" | "awaiting-auction" | "awaiting-settlement" | "finished";
 export type ModeId = "classic" | "monopol" | "run-down";
 export interface FinalStanding {
     playerId: string;
@@ -69,6 +70,23 @@ export interface TradeOffer {
     requestedPositions: number[];
     offeredCash: number;
     requestedCash: number;
+    /** Get Out of Jail Free cards may be sold to another player at any agreed price. */
+    offeredJailCards: number;
+    requestedJailCards: number;
+}
+
+/**
+ * A debt the player cannot cover from cash. Play pauses on the debtor so they can
+ * choose how to raise it — selling buildings, mortgaging, or trading — rather than
+ * the engine liquidating their board for them.
+ */
+export interface PendingDebt {
+    playerId: string;
+    amount: number;
+    /** null means the debt is owed to the bank. */
+    creditorId: string | null;
+    reason: string;
+    label?: string;
 }
 
 export interface AuctionState {
@@ -93,6 +111,7 @@ export interface GameSnapshot {
     pendingLanding: { playerId: string; position: number } | null;
     pendingTrade: TradeOffer | null;
     pendingAuction: AuctionState | null;
+    pendingDebt: PendingDebt | null;
     winnerId: string | null;
     finalStandings: FinalStanding[] | null;
     pausedPlayerId: string | null;
@@ -116,12 +135,13 @@ export type GameAction =
     | { type: "sell-building"; position: number }
     | { type: "mortgage"; position: number }
     | { type: "unmortgage"; position: number }
-    | { type: "trade-propose"; to: string; offeredPositions: number[]; requestedPositions: number[]; offeredCash: number; requestedCash: number }
+    | { type: "trade-propose"; to: string; offeredPositions: number[]; requestedPositions: number[]; offeredCash: number; requestedCash: number; offeredJailCards: number; requestedJailCards: number }
     | { type: "trade-accept" }
     | { type: "trade-reject" }
     | { type: "trade-cancel" }
     | { type: "auction-bid"; amount: number }
     | { type: "auction-pass" }
+    | { type: "declare-bankruptcy" }
     | { type: "end-game" }
     | { type: "restart" };
 
@@ -212,6 +232,11 @@ function isMoney(value: unknown): value is number {
     return typeof value === "number" && Number.isFinite(value) && value >= 0 && Number.isInteger(value);
 }
 
+/** At most one card exists per deck, so a sane offer never exceeds two. */
+function isCardCount(value: unknown): value is number {
+    return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 2;
+}
+
 function parsePositions(value: unknown): number[] | null {
     if (!Array.isArray(value) || !value.every(isPosition) || new Set(value).size !== value.length) return null;
     return value;
@@ -228,6 +253,7 @@ export function parseAction(value: unknown): GameAction | null {
                 ? { type: "select-mode", modeId: value.modeId }
                 : null;
         case "roll":
+        case "declare-bankruptcy":
         case "end-game":
         case "restart":
         case "trade-accept":
@@ -247,9 +273,12 @@ export function parseAction(value: unknown): GameAction | null {
         case "trade-propose": {
             const offeredPositions = parsePositions(value.offeredPositions);
             const requestedPositions = parsePositions(value.requestedPositions);
+            // Jail-card fields are optional so a client that predates them still trades.
+            const offeredJailCards = value.offeredJailCards ?? 0;
+            const requestedJailCards = value.requestedJailCards ?? 0;
             return typeof value.to === "string" && value.to.length > 0 && offeredPositions !== null && requestedPositions !== null &&
-                isMoney(value.offeredCash) && isMoney(value.requestedCash)
-                ? { type: "trade-propose", to: value.to, offeredPositions, requestedPositions, offeredCash: value.offeredCash, requestedCash: value.requestedCash }
+                isMoney(value.offeredCash) && isMoney(value.requestedCash) && isCardCount(offeredJailCards) && isCardCount(requestedJailCards)
+                ? { type: "trade-propose", to: value.to, offeredPositions, requestedPositions, offeredCash: value.offeredCash, requestedCash: value.requestedCash, offeredJailCards, requestedJailCards }
                 : null;
         }
         case "auction-bid":
@@ -269,6 +298,7 @@ export class GameEngine {
     private pendingLanding: { playerId: string; position: number } | null = null;
     private pendingTrade: TradeOffer | null = null;
     private pendingAuction: AuctionState | null = null;
+    private pendingDebt: PendingDebt | null = null;
     private winnerId: string | null = null;
     private finalStandings: FinalStanding[] | null = null;
     private pausedPlayerId: string | null = null;
@@ -296,6 +326,7 @@ export class GameEngine {
         engine.pendingLanding = clone(snapshot.pendingLanding);
         engine.pendingTrade = clone(snapshot.pendingTrade);
         engine.pendingAuction = clone(snapshot.pendingAuction ?? null);
+        engine.pendingDebt = clone(snapshot.pendingDebt ?? null);
         engine.winnerId = snapshot.winnerId;
         engine.finalStandings = clone(snapshot.finalStandings ?? null);
         engine.pausedPlayerId = snapshot.pausedPlayerId ?? null;
@@ -338,6 +369,10 @@ export class GameEngine {
         this.players.delete(id);
         this.order.splice(removedIndex, 1);
         if (this.pendingTrade && (this.pendingTrade.from === id || this.pendingTrade.to === id)) this.pendingTrade = null;
+        if (this.pendingDebt?.playerId === id) {
+            this.pendingDebt = null;
+            if (this.phase === "awaiting-settlement") this.phase = "awaiting-roll";
+        }
         if (this.pendingAuction) {
             delete this.pendingAuction.bids[id];
             this.pendingAuction.passedPlayerIds = this.pendingAuction.passedPlayerIds.filter((playerId) => playerId !== id);
@@ -370,6 +405,7 @@ export class GameEngine {
         if (!action) return this.reject(actorId, "Invalid action payload");
         const actor = this.players.get(actorId);
         if (!actor) return this.reject(actorId, "Unknown player");
+        if (action.type === "declare-bankruptcy") return this.declareBankruptcy(actor);
         if (action.type === "end-game") return this.endGame(actor);
         if (action.type === "restart") return this.restart(actor);
         if (this.pausedPlayerId) return this.reject(actorId, "Game is paused while a player reconnects");
@@ -397,7 +433,7 @@ export class GameEngine {
             phase: this.phase, gameStarted: this.phase !== "lobby", currentPlayerId: this.currentPlayerId,
             lobbyHostId: this.lobbyHostId, modeId: this.modeId, selectedMode: modes[this.modeId],
             players: this.order.map((id) => this.players.get(id)).filter((player): player is EnginePlayer => Boolean(player)),
-            pendingLanding: this.pendingLanding, pendingTrade: this.pendingTrade, pendingAuction: this.pendingAuction, winnerId: this.winnerId, pausedPlayerId: this.pausedPlayerId,
+            pendingLanding: this.pendingLanding, pendingTrade: this.pendingTrade, pendingAuction: this.pendingAuction, pendingDebt: this.pendingDebt, winnerId: this.winnerId, pausedPlayerId: this.pausedPlayerId,
             finalStandings: this.finalStandings,
             consecutiveDoubles: this.consecutiveDoubles, extraRollPending: this.extraRollPending,
             cardDecks: this.cardDecks, heldJailCards: this.heldJailCards,
@@ -415,6 +451,7 @@ export class GameEngine {
     private get turnTimeoutSeconds(): number | null {
         if (this.phase === "lobby" || this.phase === "finished") return null;
         const modeTimer = this.mode.turnTimer;
+        if (this.phase === "awaiting-settlement") return SETTLEMENT_SECONDS;
         if (this.phase === "awaiting-auction") return Math.min(AUCTION_SECONDS, modeTimer ?? AUCTION_SECONDS);
         return Math.min(IDLE_TURN_SECONDS, modeTimer ?? IDLE_TURN_SECONDS);
     }
@@ -428,7 +465,11 @@ export class GameEngine {
     }
 
     public expireTurn(): boolean {
-        if (this.pausedPlayerId || (this.phase !== "awaiting-roll" && this.phase !== "awaiting-landing" && this.phase !== "awaiting-auction")) return false;
+        if (this.pausedPlayerId || (this.phase !== "awaiting-roll" && this.phase !== "awaiting-landing" && this.phase !== "awaiting-auction" && this.phase !== "awaiting-settlement")) return false;
+        if (this.phase === "awaiting-settlement") {
+            this.forceSettlement();
+            return true;
+        }
         const player = this.currentPlayerId ? this.players.get(this.currentPlayerId) : undefined;
         if (!player) return false;
         if (this.phase === "awaiting-auction") {
@@ -663,7 +704,7 @@ export class GameEngine {
     }
 
     private sellBuilding(player: EnginePlayer, position: number) {
-        if (!this.isTurn(player) || this.phase !== "awaiting-roll") return this.reject(player.id, "Buildings can only be sold during your roll phase");
+        if (!this.isSettling(player) && (!this.isTurn(player) || this.phase !== "awaiting-roll")) return this.reject(player.id, "Buildings can only be sold during your roll phase");
         const property = this.propertyOf(player, position);
         const space = propertyByPosition.get(position);
         if (!property || !space || !this.isStreet(space) || property.count === 0) return this.reject(player.id, "There is no building to sell");
@@ -683,12 +724,15 @@ export class GameEngine {
             property.count = (property.count - 1) as 0 | 1 | 2 | 3;
         }
         player.balance += Math.floor(cost / 2);
+        this.settleDebtIfPossible();
         this.publish();
         return true;
     }
 
     private mortgage(player: EnginePlayer, position: number, mortgaging: boolean) {
-        if (!this.isTurn(player) || this.phase !== "awaiting-roll" || !this.mode.mortageAllowed) return this.reject(player.id, "Mortgages are not available now");
+        // Redeeming costs money, so only raising it is allowed while settling a debt.
+        const settling = this.isSettling(player) && mortgaging;
+        if (!settling && (!this.isTurn(player) || this.phase !== "awaiting-roll" || !this.mode.mortageAllowed)) return this.reject(player.id, "Mortgages are not available now");
         const property = this.propertyOf(player, position);
         const space = propertyByPosition.get(position);
         if (!property || !space || String(space.group) === "Special") return this.reject(player.id, "You do not own this property");
@@ -700,6 +744,7 @@ export class GameEngine {
             if (property.mortgaged) return this.reject(player.id, "Property is already mortgaged");
             property.mortgaged = true;
             player.balance += value;
+            this.settleDebtIfPossible();
         } else {
             const cost = value + Math.ceil(value / 10);
             if (!property.mortgaged || player.balance < cost) return this.reject(player.id, "Cannot redeem this mortgage");
@@ -711,9 +756,10 @@ export class GameEngine {
     }
 
     private proposeTrade(player: EnginePlayer, offer: Extract<GameAction, { type: "trade-propose" }>) {
-        if (!this.isTurn(player) || this.phase !== "awaiting-roll" || !this.mode.AllowDeals || this.pendingTrade || offer.to === player.id) return this.reject(player.id, "Trade cannot be proposed now");
+        const settling = this.isSettling(player);
+        if ((!settling && (!this.isTurn(player) || this.phase !== "awaiting-roll")) || !this.mode.AllowDeals || this.pendingTrade || offer.to === player.id) return this.reject(player.id, "Trade cannot be proposed now");
         const recipient = this.players.get(offer.to);
-        const candidate: TradeOffer = { from: player.id, to: offer.to, offeredPositions: offer.offeredPositions, requestedPositions: offer.requestedPositions, offeredCash: offer.offeredCash, requestedCash: offer.requestedCash };
+        const candidate: TradeOffer = { from: player.id, to: offer.to, offeredPositions: offer.offeredPositions, requestedPositions: offer.requestedPositions, offeredCash: offer.offeredCash, requestedCash: offer.requestedCash, offeredJailCards: offer.offeredJailCards, requestedJailCards: offer.requestedJailCards };
         if (!recipient || !this.validTrade(candidate)) return this.reject(player.id, "Invalid trade offer");
         this.pendingTrade = clone(candidate);
         this.publish();
@@ -734,6 +780,12 @@ export class GameEngine {
         nextTo.balance = nextTo.balance - offer.requestedCash + offer.offeredCash;
         nextFrom.properties.push(...requested);
         nextTo.properties.push(...offered);
+        nextFrom.getoutCards = nextFrom.getoutCards - offer.offeredJailCards + offer.requestedJailCards;
+        nextTo.getoutCards = nextTo.getoutCards - offer.requestedJailCards + offer.offeredJailCards;
+        const movedToRecipient = (this.heldJailCards[nextFrom.id] ??= []).splice(0, offer.offeredJailCards);
+        const movedToProposer = (this.heldJailCards[nextTo.id] ??= []).splice(0, offer.requestedJailCards);
+        this.heldJailCards[nextTo.id].push(...movedToRecipient);
+        this.heldJailCards[nextFrom.id].push(...movedToProposer);
         // Each side pays 10% on the mortgaged property it receives, ceilinged to
         // whole pounds exactly as an ordinary redemption is.
         const interestOn = (properties: PlayerProperty[]) => properties
@@ -747,11 +799,16 @@ export class GameEngine {
         this.players.set(nextFrom.id, nextFrom);
         this.players.set(nextTo.id, nextTo);
         this.pendingTrade = null;
-        const describe = (cash: number, positions: number[]) => {
-            const parts = [...(cash > 0 ? [`£${cash}`] : []), ...positions.map((position) => String(propertyByPosition.get(position)?.name ?? `space ${position}`))];
+        this.settleDebtIfPossible();
+        const describe = (cash: number, positions: number[], jailCards: number) => {
+            const parts = [
+                ...(cash > 0 ? [`£${cash}`] : []),
+                ...positions.map((position) => String(propertyByPosition.get(position)?.name ?? `space ${position}`)),
+                ...(jailCards > 0 ? [`${jailCards} Get Out of Jail Free card${jailCards === 1 ? "" : "s"}`] : []),
+            ];
             return parts.length ? parts.join(" and ") : "nothing";
         };
-        this.history(`${from.username} gave ${describe(offer.offeredCash, offer.offeredPositions)} to ${to.username} for ${describe(offer.requestedCash, offer.requestedPositions)}`);
+        this.history(`${from.username} gave ${describe(offer.offeredCash, offer.offeredPositions, offer.offeredJailCards)} to ${to.username} for ${describe(offer.requestedCash, offer.requestedPositions, offer.requestedJailCards)}`);
         this.publish();
         return true;
     }
@@ -767,6 +824,7 @@ export class GameEngine {
         const from = this.players.get(offer.from);
         const to = this.players.get(offer.to);
         if (!from || !to || from.balance < offer.offeredCash || to.balance < offer.requestedCash) return false;
+        if (from.getoutCards < offer.offeredJailCards || to.getoutCards < offer.requestedJailCards) return false;
         const owns = (player: EnginePlayer, positions: number[]) => positions.every((position) => {
             const property = this.propertyOf(player, position);
             return property !== undefined && property.count === 0;
@@ -904,11 +962,7 @@ export class GameEngine {
 
     private transfer(from: EnginePlayer, to: EnginePlayer, amount: number, reason: string, label?: string) {
         if (amount <= 0) return true;
-        this.raiseCash(from, amount);
-        if (from.balance < amount) {
-            this.bankrupt(from, to, reason);
-            return false;
-        }
+        if (from.balance < amount) return this.openSettlement(from, amount, to, reason, label);
         from.balance -= amount;
         to.balance += amount;
         this.history(label ?? `${from.username} paid £${amount} for ${reason}`);
@@ -917,14 +971,78 @@ export class GameEngine {
 
     private chargeBank(player: EnginePlayer, amount: number, reason: string) {
         if (amount <= 0) return true;
-        this.raiseCash(player, amount);
-        if (player.balance < amount) {
-            this.bankrupt(player, undefined, reason);
-            return false;
-        }
+        if (player.balance < amount) return this.openSettlement(player, amount, undefined, reason);
         player.balance -= amount;
         this.history(`${player.username} paid £${amount} for ${reason}`);
         return true;
+    }
+
+    /**
+     * Pauses play on the debtor. Returns false so the interrupted flow stops; the
+     * turn is resumed by `settleDebt` or ended by bankruptcy. Trading can bring in
+     * money the debtor cannot raise alone, so this never pre-judges bankruptcy.
+     */
+    private openSettlement(debtor: EnginePlayer, amount: number, creditor: EnginePlayer | undefined, reason: string, label?: string) {
+        this.pendingDebt = { playerId: debtor.id, amount, creditorId: creditor?.id ?? null, reason, ...(label ? { label } : {}) };
+        this.phase = "awaiting-settlement";
+        this.turnRevision += 1;
+        this.history(`${debtor.username} owes £${amount} for ${reason} and must raise £${amount - debtor.balance} more`);
+        return false;
+    }
+
+    /** Whether this player is the one who owes money right now. */
+    private isSettling(player: EnginePlayer) {
+        return this.phase === "awaiting-settlement" && this.pendingDebt?.playerId === player.id;
+    }
+
+    /** Pays a pending debt the moment the debtor can cover it, then resumes play. */
+    private settleDebtIfPossible() {
+        const debt = this.pendingDebt;
+        if (!debt) return;
+        const debtor = this.players.get(debt.playerId);
+        if (!debtor || debtor.balance < debt.amount) return;
+        const creditor = debt.creditorId ? this.players.get(debt.creditorId) : undefined;
+        debtor.balance -= debt.amount;
+        if (creditor) creditor.balance += debt.amount;
+        this.history(debt.label ?? `${debtor.username} paid £${debt.amount} for ${debt.reason}`);
+        this.pendingDebt = null;
+        this.phase = "awaiting-roll";
+        this.endTurn();
+    }
+
+    private declareBankruptcy(player: EnginePlayer) {
+        const debt = this.pendingDebt;
+        if (!debt || !this.isSettling(player)) return this.reject(player.id, "You have no debt to settle");
+        const creditor = debt.creditorId ? this.players.get(debt.creditorId) : undefined;
+        this.pendingDebt = null;
+        this.phase = "awaiting-roll";
+        this.bankrupt(player, creditor, debt.reason);
+        this.endTurn();
+        return true;
+    }
+
+    /** Deadline backstop: liquidate what we can, then bankrupt if still short. */
+    private forceSettlement() {
+        const debt = this.pendingDebt;
+        if (!debt) return;
+        const debtor = this.players.get(debt.playerId);
+        if (!debtor) {
+            this.pendingDebt = null;
+            this.phase = "awaiting-roll";
+            this.endTurn();
+            return;
+        }
+        this.raiseCash(debtor, debt.amount);
+        if (debtor.balance >= debt.amount) {
+            this.history(`${debtor.username} ran out of time and the bank liquidated their assets`);
+            this.settleDebtIfPossible();
+            return;
+        }
+        const creditor = debt.creditorId ? this.players.get(debt.creditorId) : undefined;
+        this.pendingDebt = null;
+        this.phase = "awaiting-roll";
+        this.bankrupt(debtor, creditor, debt.reason);
+        this.endTurn();
     }
 
     /**
@@ -1061,6 +1179,7 @@ export class GameEngine {
         this.pendingLanding = null;
         this.pendingTrade = null;
         this.pendingAuction = null;
+        this.pendingDebt = null;
         this.pausedPlayerId = null;
         this.consecutiveDoubles = 0;
         this.extraRollPending = false;
@@ -1085,6 +1204,7 @@ export class GameEngine {
         this.pendingLanding = null;
         this.pendingTrade = null;
         this.pendingAuction = null;
+        this.pendingDebt = null;
         this.pausedPlayerId = null;
         this.consecutiveDoubles = 0;
         this.extraRollPending = false;
@@ -1100,6 +1220,8 @@ export class GameEngine {
     }
 
     private endTurn() {
+        // A pending debt suspends the turn; settleDebtIfPossible or bankruptcy resumes it.
+        if (this.pendingDebt) return;
         this.pendingLanding = null;
         this.pendingAuction = null;
         this.resolveWinner();

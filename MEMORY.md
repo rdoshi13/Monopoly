@@ -26,6 +26,8 @@ Monopoly is a pnpm-workspace React 18 and TypeScript multiplayer game. A shared 
 - The active edition is the classic UK/London board: London property and station names, UK Chance/Community Chest decks, and pound-denominated UI/history. Numeric prices, rents, and balances remain plain integers internally.
 - Chance and Community Chest remain one authoritative shared deck per room, drawn without replacement across players. Card history and snapshots are public, but the interactive card/movement presentation is queued only by the drawing player's client.
 - Go salary is an explicit authoritative engine operation: every eligible pass or Advance to Go credits £200 exactly once and emits `dice`/card movement before `salary`, followed by public salary history. The web salary presentation suppresses the matching generic +£200 balance animation.
+- An unpayable debt pauses play on the debtor in `awaiting-settlement` rather than the engine liquidating their board. The debtor alone may sell buildings, mortgage, or trade; other players are blocked but may still accept a trade the debtor offers. Building and redeeming are barred because both spend money. The debt clears automatically the moment the debtor can cover it, and only the debtor may `declare-bankruptcy`. A 120-second deadline falls back to the old automatic `raiseCash` liquidation and then bankruptcy, so a stalled debtor cannot freeze the room. Trade is deliberately part of the escape route, so insolvency never pre-judges bankruptcy on self-liquidation alone.
+- Get Out of Jail Free cards are tradeable at any agreed price, matching the printed rule. `TradeOffer` carries jail-card counts and `acceptTrade` moves the `heldJailCards` deck identity so a sold card still returns to the right discard pile. The wire fields are optional and default to zero so an older client still trades.
 - A room host may end an active game. Final net worth is cash + full printed price of each unmortgaged property + mortgage value of each mortgaged property + full building purchase cost (a hotel is level five). Standings sort by net worth, then cash, then original player order. Node and Worker resynchronize room host identity from the authoritative engine snapshot before authorization.
 
 ## Gotchas
@@ -54,6 +56,18 @@ pnpm build
 ## Change Log
 
 <!-- Newest first. Record meaningful features, fixes, migrations, refactors, or dependency changes. -->
+
+### 2026-08-12 — Claude
+
+- Added: Player-driven insolvency. An unpayable debt now opens `awaiting-settlement` on the debtor with the amount, the shortfall, and the routes out, replacing the automatic sell-and-mortgage that gave the player no say. They may sell buildings, mortgage, or trade; the debt settles the instant they can cover it and play resumes. Building and redeeming are barred while settling because both spend money.
+- Added: `declare-bankruptcy`, available only to the debtor while a debt stands. Bankruptcy is no longer automatic.
+- Added: A 120-second settlement deadline that falls back to the old `raiseCash` liquidation and then bankruptcy, so a stalled or absent debtor cannot freeze the room.
+- Added: Get Out of Jail Free cards are tradeable. `TradeOffer` carries jail-card counts, `acceptTrade` moves the `heldJailCards` deck identity so a sold card returns to the right pile, and the composer shows steppers capped by what each side holds. Wire fields are optional and default to zero, so an older client still trades.
+- Changed: Other players are blocked during a settlement but may still accept a trade the debtor offers, since a deal can raise money the debtor cannot raise alone.
+- Files: `packages/game-engine/src/engine.ts`, `packages/game-engine/test/engine.test.ts`, `apps/web/src/gameViewState.ts`, `apps/web/src/GameView.tsx`, and `apps/web/src/styles.css`.
+- Validation: 49 engine + 25 web + 10 Node + 10 Worker tests, per-package type-check, web build, Worker dry-run. Two existing tests were rewritten because the behaviour changed on purpose: the forced-sale test now asserts the pause and player-driven settlement, and the bankruptcy test now declares it. Verified live in Chrome through the Node server: Alice at £10 landing on Fleet Street produced "You owe £18 for rent for Fleet Street / You need £8 more", Bob saw "Play is paused while they raise the money" with his roll withdrawn, and a £50-for-£10 trade cleared the debt and resumed play with "Alice paid Bob £18 rent for Fleet Street".
+- Gotcha: Node 26 dropped corepack and the Homebrew upgrade left `/opt/homebrew/bin/pnpm` dangling, so `pnpm` is unavailable. Run each package's own `node_modules/.bin/{tsc,vitest,vite,wrangler}` directly until pnpm is reinstalled.
+- Known limitation: a card that pays every player still stops at the first shortfall, so later creditors go unpaid in that case. Pre-existing behaviour, unchanged by this work.
 
 ### 2026-08-11 — Claude
 
