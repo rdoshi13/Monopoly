@@ -38,6 +38,8 @@ pnpm --filter @monopoly/web build
 pnpm --filter @monopoly/cloudflare-server deploy
 ```
 
+Pushes to `main` deploy automatically through `.github/workflows/deploy-cloudflare.yml`. The repository must define the Actions secret `CLOUDFLARE_API_TOKEN`, created from Cloudflare's **Edit Cloudflare Workers** API-token template and restricted to the `Rdoshi13@asu.edu's Account` account. The account ID is pinned in `apps/cloudflare-server/wrangler.jsonc`; no account-ID secret is required.
+
 All code lives under `apps/` and `packages/`. The original PeerJS implementation was removed once the workspace reached parity; it remains in git history if you need to compare against it.
 
 Run `pnpm test`, `pnpm typecheck`, and `pnpm build` before deployment.

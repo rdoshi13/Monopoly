@@ -58,6 +58,15 @@ pnpm build
 
 <!-- Newest first. Record meaningful features, fixes, migrations, refactors, or dependency changes. -->
 
+### 2026-08-14 — Codex
+
+- Deployed: The production React client and Durable Object backend now ship as one Cloudflare Worker at `https://rdoshi13-monopoly.rdoshi13.workers.dev` in the personal `Rdoshi13@asu.edu's Account` account (`03fa06c1334ae6ef4fd3aff628ba23a0`). Workers Static Assets serves the Vite build, while `/rooms`, `/ws`, and `/health` run Worker-first.
+- Changed: Production clients default their HTTP and WebSocket bases to the current page origin. Local development keeps the existing `http://localhost:4000` fallback.
+- Added: `.github/workflows/deploy-cloudflare.yml` validates, builds, and deploys every push to `main`. It requires the encrypted GitHub Actions secret `CLOUDFLARE_API_TOKEN`, created from Cloudflare's **Edit Cloudflare Workers** template and restricted to the personal account.
+- Why GitHub Actions: Cloudflare's native Git connection reported that `rdoshi13/Monopoly` is disconnected from the Cloudflare GitHub App. The Actions workflow provides equivalent push-to-production behavior without granting the app repository access.
+- Validation: 99 tests, workspace type-check, web production build, Worker dry-run, live HTML and `/health`, HTTP 201 room creation, and an authenticated production WebSocket receiving both `room:state` and `game:state`.
+- Files: `apps/cloudflare-server/wrangler.jsonc`, `apps/web/src/main.tsx`, `apps/web/src/socket.ts`, `apps/web/index.html`, `.github/workflows/deploy-cloudflare.yml`, `README.md`, and `MEMORY.md`.
+
 ### 2026-08-12 — Claude
 
 - Fixed: "Pay each player" is charged as one obligation. It paid creditors one at a time and abandoned the rest at the first shortfall, so with three players a payer holding £60 paid the first £50 and the second player silently got nothing. The total is now checked up front and either paid in full or carried into a single settlement that distributes to every creditor on completion.
