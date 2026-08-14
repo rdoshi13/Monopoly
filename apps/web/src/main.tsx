@@ -9,7 +9,7 @@ import { isCardPresentationForPlayer } from "./presentationQueue";
 import { parseSalaryPresentation, removeSalaryPresentation, type SalaryPresentation } from "./salaryPresentation";
 import "./styles.css";
 
-const api = import.meta.env.VITE_API_BASE ?? "http://localhost:4000";
+const api = import.meta.env.VITE_API_BASE ?? (import.meta.env.DEV ? "http://localhost:4000" : window.location.origin);
 const SESSION_KEY = "monopoly.session";
 
 /**

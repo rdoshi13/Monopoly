@@ -29,7 +29,14 @@ pnpm dev:worker # Cloudflare Durable Object backend
 
 Copy `apps/web/.env.example` to `apps/web/.env.local`. Use `VITE_SOCKET_TRANSPORT=socketio` for the local Node backend and `websocket` for the Worker.
 
-The Node server reads `apps/server/.env.example` keys from the environment: `ALLOWED_ORIGIN` (defaults to `http://localhost:5173`) restricts CORS and Socket.IO, and `PORT` defaults to 4000. The Worker's equivalent is the `ALLOWED_ORIGIN` var in `wrangler.jsonc`, which must be changed from localhost before deploying.
+The Node server reads `apps/server/.env.example` keys from the environment: `ALLOWED_ORIGIN` (defaults to `http://localhost:5173`) restricts CORS and Socket.IO, and `PORT` defaults to 4000. Production is deployed as one full-stack Cloudflare Worker: the Worker serves `apps/web/dist`, while `/rooms`, `/ws`, and `/health` run through the Durable Object backend. Production clients therefore use the current page origin by default and need no separate API or WebSocket URL.
+
+The production deployment is available at <https://rdoshi13-monopoly.rdoshi13.workers.dev>. Build and deploy it from the repository root with:
+
+```bash
+pnpm --filter @monopoly/web build
+pnpm --filter @monopoly/cloudflare-server deploy
+```
 
 All code lives under `apps/` and `packages/`. The original PeerJS implementation was removed once the workspace reached parity; it remains in git history if you need to compare against it.
 

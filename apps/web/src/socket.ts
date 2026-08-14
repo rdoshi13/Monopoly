@@ -118,7 +118,7 @@ class SocketIoSocket implements GameSocket {
  * routes by event instead and ignores it.
  */
 export const createGameSocket = (roomCode: string): GameSocket => {
-  const base = import.meta.env.VITE_SOCKET_BASE ?? "http://localhost:4000";
+  const base = import.meta.env.VITE_SOCKET_BASE ?? (import.meta.env.DEV ? "http://localhost:4000" : window.location.origin);
   return import.meta.env.VITE_SOCKET_TRANSPORT === "socketio"
     ? new SocketIoSocket(io(base))
     : new NativeSocket(`${base.replace(/^http/, "ws").replace(/\/$/, "")}/ws?room=${encodeURIComponent(roomCode)}`);
