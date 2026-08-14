@@ -35,7 +35,7 @@ The production deployment is available at <https://rdoshi13-monopoly.rdoshi13.wo
 
 ```bash
 pnpm --filter @monopoly/web build
-pnpm --filter @monopoly/cloudflare-server deploy
+pnpm --filter @monopoly/cloudflare-server run deploy
 ```
 
 Pushes to `main` deploy automatically through `.github/workflows/deploy-cloudflare.yml`. The repository must define the Actions secret `CLOUDFLARE_API_TOKEN`, created from Cloudflare's **Edit Cloudflare Workers** API-token template and restricted to the `Rdoshi13@asu.edu's Account` account. The account ID is pinned in `apps/cloudflare-server/wrangler.jsonc`; no account-ID secret is required.

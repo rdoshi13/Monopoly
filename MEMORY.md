@@ -60,6 +60,13 @@ pnpm build
 
 ### 2026-08-14 — Codex
 
+- Fixed: The Cloudflare deployment workflow now invokes the package script explicitly with `pnpm --filter @monopoly/cloudflare-server run deploy`. Without `run`, pnpm interpreted `deploy` as its built-in workspace deployment command and failed because no target directory was supplied.
+- Changed: GitHub Actions now use the Node 24-based `actions/checkout@v6`, `actions/setup-node@v7`, and `pnpm/action-setup@v6` releases, and CI runs the project on Node 24.
+- Files: `.github/workflows/deploy-cloudflare.yml`, `README.md`, and `MEMORY.md`.
+- Validation: Exact Worker deploy script dry-run, workspace tests and type-check, and `git diff --check`.
+
+### 2026-08-14 — Codex
+
 - Deployed: The production React client and Durable Object backend now ship as one Cloudflare Worker at `https://rdoshi13-monopoly.rdoshi13.workers.dev` in the personal `Rdoshi13@asu.edu's Account` account (`03fa06c1334ae6ef4fd3aff628ba23a0`). Workers Static Assets serves the Vite build, while `/rooms`, `/ws`, and `/health` run Worker-first.
 - Changed: Production clients default their HTTP and WebSocket bases to the current page origin. Local development keeps the existing `http://localhost:4000` fallback.
 - Added: `.github/workflows/deploy-cloudflare.yml` validates, builds, and deploys every push to `main`. It requires the encrypted GitHub Actions secret `CLOUDFLARE_API_TOKEN`, created from Cloudflare's **Edit Cloudflare Workers** template and restricted to the personal account.
