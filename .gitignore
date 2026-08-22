@@ -33,3 +33,6 @@ config.local.ts
 *.njsproj
 *.sln
 *.sw?
+
+# vault memory (machine-local, not for version control)
+CLAUDE.md

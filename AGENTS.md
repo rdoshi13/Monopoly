@@ -27,3 +27,22 @@
 ## Memory protocol
 
 Update `MEMORY.md` after meaningful architecture, feature, rule, dependency, or deployment changes. Keep its architecture and commands current and add a concise dated change-log entry.
+
+<!-- vault-memory-setup:start -->
+## Vault memory
+Before starting work, read these files for project context:
+- /Users/maruti/Documents/Projects/_meta/conventions.md
+- /Users/maruti/Documents/Projects/_meta/preferences.md
+- /Users/maruti/Documents/Projects/_notes/rdoshi13-Monopoly/overview.md
+- /Users/maruti/Documents/Projects/_notes/rdoshi13-Monopoly/decisions.md
+- /Users/maruti/Documents/Projects/_notes/rdoshi13-Monopoly/gotchas.md
+
+Also read `MEMORY.md` in this repo for prior context; it stays the detailed
+project memory and change log (see the memory protocol above).
+
+When you make a significant decision or hit a gotcha worth remembering,
+append it to the matching file above. Format:
+
+## YYYY-MM-DD — short title
+1-3 sentences. Newest entries at the top.
+<!-- vault-memory-setup:end -->
